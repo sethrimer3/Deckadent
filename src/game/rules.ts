@@ -19,15 +19,20 @@ export function findUnit(gs: GameState, uid: string): UnitInstance | null {
 }
 
 export function canPlayCard(gs: GameState, cardUid: string): boolean {
-  if (gs.turn !== 'player' || gs.phase !== 'main' || gs.aiActing) return false;
+  if (gs.turn !== 'player' || (gs.phase !== 'main' && gs.phase !== 'placing-generator') || gs.aiActing) return false;
   const card = gs.player.hand.find(c => c.uid === cardUid);
   if (!card) return false;
   return gs.player.energy >= CARD_DEFS[card.defId].cost;
 }
 
 // Play a card for the active turn player.
-// For spells, targetUid must be provided.
-export function playCard(gs: GameState, cardUid: string, targetUid?: string): boolean {
+// For spells, targetUid must be provided. For generators, placement can set sim coordinates.
+export function playCard(
+  gs: GameState,
+  cardUid: string,
+  targetUid?: string,
+  placement?: { x: number; y: number }
+): boolean {
   const owner: Owner = gs.turn;
   const ps = owner === 'player' ? gs.player : gs.enemy;
 
@@ -47,8 +52,10 @@ export function playCard(gs: GameState, cardUid: string, targetUid?: string): bo
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
       attack: 0, hasAttacked: false, owner,
+      simX: placement?.x,
+      simY: placement?.y,
     });
-    gs.combatLog.push(`${label} plays ${def.name} (generator).`);
+    gs.combatLog.push(`${label} places ${def.name} (generator).`);
     ps.discard.push(card);
     return true;
   }
@@ -137,6 +144,7 @@ export function endTurn(gs: GameState): void {
   gs.selectedCardUid = null;
   gs.selectedAttackerUid = null;
   gs.pendingSpellCardUid = null;
+  gs.pendingGeneratorCardUid = null;
   gs.phase = 'main';
   gs.turn = gs.turn === 'player' ? 'enemy' : 'player';
   startTurn(gs);

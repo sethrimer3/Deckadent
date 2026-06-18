@@ -3,7 +3,7 @@ export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL';
 export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
-export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack';
+export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator';
 
 export interface CardDef {
   id: string;
@@ -31,6 +31,8 @@ export interface UnitInstance {
   attack: number;
   hasAttacked: boolean;
   owner: Owner;
+  simX?: number;
+  simY?: number;
 }
 
 export interface PlayerState {
@@ -50,6 +52,7 @@ export interface GameState {
   selectedCardUid: string | null;
   selectedAttackerUid: string | null;
   pendingSpellCardUid: string | null;
+  pendingGeneratorCardUid: string | null;
   combatLog: string[];
   status: GameStatus;
   aiActing: boolean;

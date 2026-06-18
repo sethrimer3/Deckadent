@@ -2,6 +2,7 @@ import './styles.css';
 import { initSim, updateSim, renderSim, SIM_W, SIM_H } from './game/sandSim';
 import { createInitialGameState } from './game/state';
 import { initUI, renderUI } from './game/ui';
+import { renderGeneratorStructures } from './game/generatorVisuals';
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
 const canvas = document.createElement('canvas');
@@ -32,6 +33,7 @@ function loop(ts: number): void {
   if (ts - lastSimTime >= SIM_INTERVAL) {
     updateSim();
     renderSim(ctx);
+    renderGeneratorStructures(ctx, gs);
     lastSimTime = ts;
   }
   requestAnimationFrame(loop);

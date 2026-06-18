@@ -188,6 +188,9 @@ body {
   border-radius: 4px;
   display: block;
 }
+#battle-canvas.placement-active {
+  cursor: crosshair;
+}
 
 .phase-msg {
   font-size: 12px;

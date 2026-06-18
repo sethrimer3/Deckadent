@@ -17,7 +17,7 @@ function makeCard(defId: string): CardInstance {
   return { uid: newUid(), defId };
 }
 
-function makeUnit(defId: string, owner: Owner): UnitInstance {
+function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): UnitInstance {
   const def = CARD_DEFS[defId];
   return {
     uid: newUid(),
@@ -27,6 +27,8 @@ function makeUnit(defId: string, owner: Owner): UnitInstance {
     attack: def.attack ?? 0,
     hasAttacked: false,
     owner,
+    simX,
+    simY,
   };
 }
 
@@ -38,7 +40,9 @@ function makePlayerState(deckIds: string[], owner: Owner): PlayerState {
     hand,
     discard: [],
     // Each side starts with 2 generators already in play
-    generators: [makeUnit('spark_core', owner), makeUnit('spring_core', owner)],
+    generators: owner === 'player'
+      ? [makeUnit('spark_core', owner, 62, 148), makeUnit('spring_core', owner, 98, 148)]
+      : [makeUnit('spark_core', owner, 222, 32), makeUnit('spring_core', owner, 258, 32)],
     creatures: [],
     energy: 0,
   };
@@ -59,6 +63,7 @@ export function createInitialGameState(): GameState {
     selectedCardUid: null,
     selectedAttackerUid: null,
     pendingSpellCardUid: null,
+    pendingGeneratorCardUid: null,
     combatLog: ['Game started — Player goes first!', 'Play generators to increase energy. Creatures can attack once per turn.'],
     status: 'playing',
     aiActing: false,

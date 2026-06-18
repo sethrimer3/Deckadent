@@ -55,7 +55,7 @@ function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = 
 function handCard(card: CardInstance, gs: GameState): string {
   const def = CARD_DEFS[card.defId];
   const playable = canPlayCard(gs, card.uid);
-  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid;
+  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid || gs.pendingGeneratorCardUid === card.uid;
   const cls = [
     'hand-card',
     playable ? 'playable' : 'unplayable',
@@ -120,6 +120,8 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     phaseMsg = `<div class="phase-msg">Select an enemy creature or generator to attack — or click elsewhere to cancel.</div>`;
   } else if (phase === 'targeting-spell') {
     phaseMsg = `<div class="phase-msg">Select a target for your spell — or click elsewhere to cancel.</div>`;
+  } else if (phase === 'placing-generator') {
+    phaseMsg = `<div class="phase-msg">Click the simulation field to place your generator.</div>`;
   }
 
   const endTurnBtn = turn === 'player' && !gs.aiActing
@@ -192,6 +194,7 @@ ${status !== 'playing' ? `
   // Mount canvas into slot
   const slot = appEl.querySelector('#canvas-slot');
   if (slot) slot.appendChild(_canvas);
+  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator');
 
   bindEvents(gs, appEl);
 }
@@ -205,6 +208,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     gs.selectedCardUid = null;
     gs.selectedAttackerUid = null;
     gs.pendingSpellCardUid = null;
+    gs.pendingGeneratorCardUid = null;
     gs.phase = 'main';
     endTurn(gs);
     const nextTurn = currentTurn(gs);
@@ -240,6 +244,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       if (def.type === 'SPELL') {
         // Enter targeting mode
         gs.pendingSpellCardUid = uid;
+        gs.pendingGeneratorCardUid = null;
         gs.selectedCardUid = uid;
         gs.phase = 'targeting-spell';
         gs.selectedAttackerUid = null;
@@ -247,7 +252,17 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         return;
       }
 
-      // Generator or Creature: play immediately
+      if (def.type === 'GENERATOR') {
+        gs.pendingGeneratorCardUid = uid;
+        gs.pendingSpellCardUid = null;
+        gs.selectedCardUid = uid;
+        gs.phase = 'placing-generator';
+        gs.selectedAttackerUid = null;
+        _renderFn();
+        return;
+      }
+
+      // Creature: play immediately
       playCard(gs, uid);
       gs.selectedCardUid = null;
       gs.phase = 'main';
@@ -273,10 +288,26 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         gs.phase = 'targeting-attack';
         gs.selectedCardUid = null;
         gs.pendingSpellCardUid = null;
+        gs.pendingGeneratorCardUid = null;
       }
       _renderFn();
     });
   });
+
+  _canvas.onclick = e => {
+    e.stopPropagation();
+    if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+    if (gs.phase !== 'placing-generator' || !gs.pendingGeneratorCardUid) return;
+
+    const rect = _canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(_canvas.width - 1, Math.round(((e.clientX - rect.left) / rect.width) * _canvas.width)));
+    const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top) / rect.height) * _canvas.height)));
+    playCard(gs, gs.pendingGeneratorCardUid, undefined, { x, y });
+    gs.pendingGeneratorCardUid = null;
+    gs.selectedCardUid = null;
+    gs.phase = 'main';
+    _renderFn();
+  };
 
   // Target selection (enemy units)
   appEl.querySelectorAll('[data-target]').forEach(el => {
@@ -294,6 +325,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         playCard(gs, gs.pendingSpellCardUid, targetUid);
         gs.pendingSpellCardUid = null;
         gs.selectedCardUid = null;
+        gs.pendingGeneratorCardUid = null;
         gs.phase = 'main';
         _renderFn();
       }
@@ -307,6 +339,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       gs.selectedAttackerUid = null;
       gs.selectedCardUid = null;
       gs.pendingSpellCardUid = null;
+      gs.pendingGeneratorCardUid = null;
       _renderFn();
     }
   });

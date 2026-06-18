@@ -1,5 +1,5 @@
 import { addParticle, SIM_W, SIM_H } from './sandSim';
-import type { GameState, Owner } from './types';
+import type { GameState, Owner, UnitInstance } from './types';
 
 function calcSimPos(
   owner: Owner,
@@ -20,7 +20,7 @@ function calcSimPos(
 }
 
 export function getUnitSimPos(gs: GameState, uid: string): { x: number; y: number } {
-  const zones: Array<{ owner: Owner; zone: 'generator' | 'creature'; arr: { uid: string }[] }> = [
+  const zones: Array<{ owner: Owner; zone: 'generator' | 'creature'; arr: UnitInstance[] }> = [
     { owner: 'enemy',  zone: 'generator', arr: gs.enemy.generators },
     { owner: 'enemy',  zone: 'creature',  arr: gs.enemy.creatures  },
     { owner: 'player', zone: 'creature',  arr: gs.player.creatures  },
@@ -28,7 +28,13 @@ export function getUnitSimPos(gs: GameState, uid: string): { x: number; y: numbe
   ];
   for (const { owner, zone, arr } of zones) {
     const idx = arr.findIndex(u => u.uid === uid);
-    if (idx !== -1) return calcSimPos(owner, zone, idx, arr.length);
+    if (idx !== -1) {
+      const unit = arr[idx];
+      if (typeof unit.simX === 'number' && typeof unit.simY === 'number') {
+        return { x: unit.simX, y: unit.simY };
+      }
+      return calcSimPos(owner, zone, idx, arr.length);
+    }
   }
   return { x: SIM_W / 2, y: SIM_H / 2 };
 }
