@@ -34,7 +34,7 @@ body {
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 .game-root {
   display: grid;
-  grid-template-rows: 30px 140px 220px 140px 160px 1fr;
+  grid-template-rows: 30px minmax(0, 1fr) 170px 76px;
   height: 100vh;
   gap: 3px;
   padding: 3px;
@@ -68,6 +68,22 @@ body {
   padding: 4px 8px;
   overflow: hidden;
 }
+.play-area {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(360px, 1fr) minmax(180px, 260px);
+  gap: 3px;
+  min-height: 0;
+  overflow: hidden;
+}
+.side-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1.2;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 .zone-label {
   font-size: 11px;
   color: var(--text-dim);
@@ -80,7 +96,9 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   min-height: 54px;
+  max-height: calc(50% - 18px);
   align-items: center;
+  overflow-y: auto;
 }
 .unit-row + .zone-label { margin-top: 4px; }
 
@@ -147,12 +165,23 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+#canvas-slot {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 #battle-canvas {
-  width: 390px;
-  height: 219px;
+  width: min(100%, 760px);
+  max-width: 920px;
+  height: auto;
+  aspect-ratio: 16 / 9;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   border: 2px solid var(--border);

@@ -74,6 +74,10 @@ function handCard(card: CardInstance, gs: GameState): string {
   </div>`;
 }
 
+function currentTurn(gs: GameState): GameState['turn'] {
+  return gs.turn;
+}
+
 // ─── Main render ─────────────────────────────────────────────────────────────
 
 export function renderUI(gs: GameState, appEl: HTMLElement): void {
@@ -135,26 +139,30 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     <span class="hint">Play generators → get energy. Creatures attack once per turn. Spells need a target.</span>
   </div>
 
-  <!-- Enemy side -->
-  <div class="side enemy-side">
-    <div class="zone-label">Enemy Generators (${enemy.generators.length}) · Energy ${enemy.energy}</div>
-    <div class="unit-row generators">${enemyGenCards || '<span class="empty-zone">No generators</span>'}</div>
-    <div class="zone-label">Enemy Creatures (${enemy.creatures.length})</div>
-    <div class="unit-row creatures">${enemyCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
-  </div>
+  <div class="play-area">
+    <!-- Player side -->
+    <div class="side player-side">
+      <div class="side-title">Player</div>
+      <div class="zone-label">Creatures (${player.creatures.length})</div>
+      <div class="unit-row creatures">${playerCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
+      <div class="zone-label">Generators (${player.generators.length}) · Energy ${player.energy}/${player.generators.length}</div>
+      <div class="unit-row generators">${playerGenCards || '<span class="empty-zone">No generators!</span>'}</div>
+    </div>
 
-  <!-- Battle canvas -->
-  <div class="battle-area">
-    ${phaseMsg}
-    <div id="canvas-slot"></div>
-  </div>
+    <!-- Battle canvas -->
+    <div class="battle-area">
+      ${phaseMsg}
+      <div id="canvas-slot"></div>
+    </div>
 
-  <!-- Player side -->
-  <div class="side player-side">
-    <div class="zone-label">Your Creatures (${player.creatures.length})</div>
-    <div class="unit-row creatures">${playerCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
-    <div class="zone-label">Your Generators (${player.generators.length}) · Energy ${player.energy}/${player.generators.length}</div>
-    <div class="unit-row generators">${playerGenCards || '<span class="empty-zone">No generators!</span>'}</div>
+    <!-- Opponent side -->
+    <div class="side enemy-side">
+      <div class="side-title">Opponent</div>
+      <div class="zone-label">Creatures (${enemy.creatures.length})</div>
+      <div class="unit-row creatures">${enemyCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
+      <div class="zone-label">Generators (${enemy.generators.length}) · Energy ${enemy.energy}</div>
+      <div class="unit-row generators">${enemyGenCards || '<span class="empty-zone">No generators</span>'}</div>
+    </div>
   </div>
 
   <!-- Hand + controls -->
@@ -199,9 +207,10 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     gs.pendingSpellCardUid = null;
     gs.phase = 'main';
     endTurn(gs);
+    const nextTurn = currentTurn(gs);
     _renderFn();
     // Kick off AI
-    if (gs.turn === 'enemy') {
+    if (nextTurn === 'enemy') {
       runEnemyTurn(gs, _renderFn, () => {
         if (gs.status === 'playing') {
           // Already flipped back to player in endTurn inside runEnemyTurn
