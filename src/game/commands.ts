@@ -1,5 +1,7 @@
 import type { GameState, Owner } from './types';
 import { playCard, attackTarget, endTurn } from './rules';
+import { SIM_W, SIM_H } from './sandSim';
+import { CARD_DEFS } from './cards';
 
 // ---------------------------------------------------------------------------
 // Command types — plain serializable objects, no class instances or functions.
@@ -56,6 +58,22 @@ function validate(gs: GameState, cmd: Command): string | null {
   if (gs.status !== 'playing') return 'game is over';
   if (TURN_SENSITIVE.includes(cmd.kind) && cmd.owner !== gs.turn) {
     return `not ${cmd.owner}'s turn (active: ${gs.turn})`;
+  }
+  if (cmd.kind === 'playCard' && cmd.placement) {
+    const { x, y } = cmd.placement;
+    if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) {
+      return `placement (${x},${y}) out of bounds`;
+    }
+    const ps = cmd.owner === 'player' ? gs.player : gs.enemy;
+    const card = ps.hand.find(c => c.uid === cmd.cardUid);
+    if (card) {
+      const def = CARD_DEFS[card.defId];
+      if (def.type === 'CREATURE') {
+        const halfY = SIM_H / 2;
+        if (cmd.owner === 'player' && y < halfY) return `player creature must be placed in lower half (y >= ${halfY})`;
+        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy creature must be placed in upper half (y < ${halfY})`;
+      }
+    }
   }
   return null;
 }

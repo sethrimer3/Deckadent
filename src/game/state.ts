@@ -36,18 +36,34 @@ function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): Un
   };
 }
 
+// Number of CORE cells in the initial diamond cluster — used for base maxHp.
+export const CORE_CELL_COUNT = 13;
+// Radius used when attributing CORE cells to a base owner.
+export const CORE_SEARCH_RADIUS = 5;
+
 function makeBase(owner: Owner): BaseInstance {
-  // Player base sits near bottom-center; enemy base near top-center.
-  // These are the physical locations of the CORE cells in the sim grid.
-  // TODO (see DESIGN_GUIDELINES.md §Win Condition): replace generator-based
-  // win/loss with core destruction once bases are fully authoritative.
   return {
     owner,
-    hp: 20,
-    maxHp: 20,
+    hp: CORE_CELL_COUNT,
+    maxHp: CORE_CELL_COUNT,
     simX: 160,
     simY: owner === 'player' ? 164 : 16,
   };
+}
+
+/** Count CORE cells in the sim grid belonging to a given base. */
+export function countCoreCells(sim: SimState, base: BaseInstance): number {
+  const r = CORE_SEARCH_RADIUS;
+  let count = 0;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = base.simX + dx;
+      const y = base.simY + dy;
+      if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
+      if (sim.grid[y * sim.width + x].type === 'CORE') count++;
+    }
+  }
+  return count;
 }
 
 /**
@@ -120,6 +136,7 @@ export function createInitialGameState(seed?: number): GameState {
     selectedAttackerUid: null,
     pendingSpellCardUid: null,
     pendingGeneratorCardUid: null,
+    pendingCreatureCardUid: null,
     combatLog: [
       `Game started — Player goes first! (seed: ${initialSeed.toString(16)})`,
       'Play generators to increase energy. Creatures attack once per turn.',

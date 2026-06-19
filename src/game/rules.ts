@@ -1,7 +1,8 @@
 import type { GameState, UnitInstance, Owner } from './types';
 import { CARD_DEFS } from './cards';
-import { newUid, startTurn } from './state';
+import { newUid, startTurn, countCoreCells } from './state';
 import { triggerEffect } from './effects';
+import { SIM_W, SIM_H } from './sandSim';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -19,7 +20,9 @@ export function findUnit(gs: GameState, uid: string): UnitInstance | null {
 }
 
 export function canPlayCard(gs: GameState, cardUid: string): boolean {
-  if (gs.turn !== 'player' || (gs.phase !== 'main' && gs.phase !== 'placing-generator') || gs.aiActing) return false;
+  if (gs.turn !== 'player' || gs.aiActing) return false;
+  const allowedPhase = gs.phase === 'main' || gs.phase === 'placing-generator' || gs.phase === 'placing-creature';
+  if (!allowedPhase) return false;
   const card = gs.player.hand.find(c => c.uid === cardUid);
   if (!card) return false;
   return gs.player.energy >= CARD_DEFS[card.defId].cost;
@@ -60,14 +63,24 @@ export function playCard(
   }
 
   if (def.type === 'CREATURE') {
+    // Creatures must be placed onto the battlefield at a valid position.
+    // Player creatures: lower half (y >= SIM_H/2). Enemy: upper half (y < SIM_H/2).
+    if (!placement) return false;
+    const halfY = SIM_H / 2;
+    if (owner === 'player' && placement.y < halfY) return false;
+    if (owner === 'enemy'  && placement.y >= halfY) return false;
+    if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
+
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
     ps.creatures.push({
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
       attack: def.attack ?? 1, hasAttacked: false, owner,
+      simX: placement.x,
+      simY: placement.y,
     });
-    gs.combatLog.push(`${label} plays ${def.name} (creature).`);
+    gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
     ps.discard.push(card);
     return true;
   }
@@ -130,16 +143,19 @@ export function destroyDeadUnits(gs: GameState): void {
   }
 }
 
-// TODO (see DESIGN_GUIDELINES.md §Physical Bases & Cores): replace generator-based
-// win/loss with core destruction once bases are fully simulated entities.
 export function checkWinLoss(gs: GameState): void {
   if (gs.status !== 'playing') return;
-  if (gs.player.generators.length === 0) {
+  // Primary win condition: base core integrity reaches zero.
+  const playerCores = countCoreCells(gs.sim, gs.player.base);
+  const enemyCores  = countCoreCells(gs.sim, gs.enemy.base);
+  if (playerCores === 0) {
     gs.status = 'lose';
-    gs.combatLog.push('All your generators were destroyed. You lose!');
-  } else if (gs.enemy.generators.length === 0) {
+    gs.combatLog.push('Your base core was destroyed. You lose!');
+    return;
+  }
+  if (enemyCores === 0) {
     gs.status = 'win';
-    gs.combatLog.push('All enemy generators were destroyed. You win!');
+    gs.combatLog.push('Enemy base core was destroyed. You win!');
   }
 }
 
@@ -148,6 +164,7 @@ export function endTurn(gs: GameState): void {
   gs.selectedAttackerUid = null;
   gs.pendingSpellCardUid = null;
   gs.pendingGeneratorCardUid = null;
+  gs.pendingCreatureCardUid = null;
   gs.phase = 'main';
   gs.turn = gs.turn === 'player' ? 'enemy' : 'player';
   startTurn(gs);

@@ -7,7 +7,7 @@ export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL';
 export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
-export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator';
+export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature';
 
 // ---------------------------------------------------------------------------
 // Simulation state — fully serializable, owns the particle grid and sim PRNG.
@@ -100,6 +100,7 @@ export interface GameState {
   selectedAttackerUid: string | null;
   pendingSpellCardUid: string | null;
   pendingGeneratorCardUid: string | null;
+  pendingCreatureCardUid: string | null;
   combatLog: string[];
   status: GameStatus;
   aiActing: boolean;

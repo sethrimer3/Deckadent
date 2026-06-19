@@ -1,0 +1,138 @@
+import { CARD_DEFS } from './cards';
+import { SIM_W, SIM_H } from './sandSim';
+import type { GameState, UnitInstance } from './types';
+
+// ---------------------------------------------------------------------------
+// Battlefield creature renderer.
+//
+// Each creature with simX/simY is drawn as a small pixel-art body on the sim
+// canvas. These are the physical battlefield entities — the DOM unit cards in
+// the sidebar remain for readability but the canvas body is the spatial authority.
+// ---------------------------------------------------------------------------
+
+type Pixel = { dx: number; dy: number; color: string };
+
+function px(pixels: Pixel[], dx: number, dy: number, color: string): void {
+  pixels.push({ dx, dy, color });
+}
+
+// ─── Emberling: small fire creature ──────────────────────────────────────────
+
+function emberlingPixels(): Pixel[] {
+  const p: Pixel[] = [];
+  // Body
+  px(p, 0, 0, '#ff6622'); px(p, -1, 0, '#ff4400'); px(p, 1, 0, '#ff4400');
+  px(p, 0, 1, '#dd3300'); px(p, -1, 1, '#cc2200'); px(p, 1, 1, '#cc2200');
+  px(p, 0, -1, '#ff9944'); px(p, -1, -1, '#ff8800');  px(p, 1, -1, '#ff8800');
+  // Flame tips
+  px(p, 0, -2, '#ffcc44'); px(p, -1, -2, '#ffaa22'); px(p, 1, -2, '#ffaa22');
+  px(p, 0, -3, '#ffee88');
+  // Eyes
+  px(p, -1, 0, '#222200'); px(p, 1, 0, '#222200');
+  return p;
+}
+
+// ─── Water Wisp: small water orb ─────────────────────────────────────────────
+
+function waterWispPixels(): Pixel[] {
+  const p: Pixel[] = [];
+  // Outer orb
+  px(p, 0, -2, '#88ddff'); px(p, -1, -2, '#66bbee'); px(p, 1, -2, '#66bbee');
+  px(p, -2, -1, '#55aadd'); px(p, 2, -1, '#55aadd');
+  px(p, -2, 0, '#4499cc');  px(p, 2, 0, '#4499cc');
+  px(p, -2, 1, '#55aadd');  px(p, 2, 1, '#55aadd');
+  px(p, 0, 2, '#88ddff');   px(p, -1, 2, '#66bbee'); px(p, 1, 2, '#66bbee');
+  // Inner glow
+  px(p, 0, 0, '#ccf4ff'); px(p, -1, 0, '#aaddff'); px(p, 1, 0, '#aaddff');
+  px(p, 0, -1, '#bbeeFF'); px(p, 0, 1, '#99ccee');
+  // Shimmer
+  px(p, -1, -1, '#ffffff'); px(p, 1, -1, '#ddeeff');
+  return p;
+}
+
+// ─── Stone Mite: squat stone crawler ─────────────────────────────────────────
+
+function stoneMitePixels(): Pixel[] {
+  const p: Pixel[] = [];
+  // Shell
+  px(p, -2, 1, '#888070'); px(p, -1, 1, '#9a9080'); px(p, 0, 1, '#9a9080');
+  px(p, 1, 1, '#9a9080');  px(p, 2, 1, '#888070');
+  px(p, -2, 0, '#7a7268'); px(p, -1, 0, '#8c8478'); px(p, 0, 0, '#8c8478');
+  px(p, 1, 0, '#8c8478');  px(p, 2, 0, '#7a7268');
+  px(p, -1, -1, '#706860'); px(p, 0, -1, '#7a7268'); px(p, 1, -1, '#706860');
+  // Dark crevices
+  px(p, -2, -1, '#504848'); px(p, 2, -1, '#504848');
+  // Legs
+  px(p, -3, 1, '#605858'); px(p, 3, 1, '#605858');
+  px(p, -3, 0, '#504848'); px(p, 3, 0, '#504848');
+  // Eyes
+  px(p, -1, -1, '#ffcc44'); px(p, 1, -1, '#ffcc44');
+  return p;
+}
+
+function pixelsForCreature(unit: UnitInstance): Pixel[] {
+  switch (unit.defId) {
+    case 'emberling':   return emberlingPixels();
+    case 'water_wisp':  return waterWispPixels();
+    case 'stone_mite':  return stoneMitePixels();
+    default: {
+      // Generic creature: colored 3×3 square
+      const def = CARD_DEFS[unit.defId];
+      const colors: Record<string, string> = { FIRE: '#ff6600', WATER: '#4499cc', EARTH: '#886644', NEUTRAL: '#888888' };
+      const c = colors[def?.element ?? 'NEUTRAL'] ?? '#888';
+      const p: Pixel[] = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) px(p, dx, dy, c);
+      return p;
+    }
+  }
+}
+
+function drawHpBar(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  hp: number, maxHp: number,
+  above: boolean,
+): void {
+  const barW = 9;
+  const barH = 2;
+  const x0 = cx - Math.floor(barW / 2);
+  const y0 = above ? cy - 6 : cy + 5;
+  if (y0 < 0 || y0 + barH >= SIM_H) return;
+
+  const filled = Math.max(0, Math.round((hp / maxHp) * barW));
+  const pct = hp / maxHp;
+  const color = pct > 0.5 ? '#3c9' : pct > 0.25 ? '#fa3' : '#e44';
+
+  ctx.fillStyle = '#111';
+  ctx.fillRect(x0, y0, barW, barH);
+  if (filled > 0) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x0, y0, filled, barH);
+  }
+}
+
+function drawCreature(ctx: CanvasRenderingContext2D, unit: UnitInstance): void {
+  if (unit.simX === undefined || unit.simY === undefined) return;
+  const cx = Math.round(unit.simX);
+  const cy = Math.round(unit.simY);
+
+  const pixels = pixelsForCreature(unit);
+  for (const p of pixels) {
+    const x = cx + p.dx;
+    const y = cy + p.dy;
+    if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) continue;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+  // HP bar above for enemy units, below for player units (so it faces battlefield center).
+  const above = unit.owner === 'enemy';
+  drawHpBar(ctx, cx, cy, unit.hp, unit.maxHp, above);
+}
+
+/** Render all creature bodies for both players onto the sim canvas. */
+export function renderCreatureEntities(ctx: CanvasRenderingContext2D, gs: GameState): void {
+  for (const unit of [...gs.player.creatures, ...gs.enemy.creatures]) {
+    drawCreature(ctx, unit);
+  }
+}

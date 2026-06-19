@@ -3,6 +3,7 @@ import { updateSim, renderSim, SIM_W, SIM_H } from './game/sandSim';
 import { createInitialGameState } from './game/state';
 import { initUI, renderUI } from './game/ui';
 import { renderGeneratorStructures, renderBaseStructures } from './game/generatorVisuals';
+import { renderCreatureEntities } from './game/battlefieldEntities';
 import { resolveSimDamage } from './game/simDamage';
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ function loop(ts: number): void {
     renderSim(ctx, gs.sim);
     renderGeneratorStructures(ctx, gs);
     renderBaseStructures(ctx, gs);
+    renderCreatureEntities(ctx, gs);
   }
 
   requestAnimationFrame(loop);

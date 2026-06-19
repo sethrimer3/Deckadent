@@ -158,13 +158,88 @@ and attacks (in `rules.ts`) remains the primary damage source.
 
 ---
 
+---
+
+## Phase 3: Creature Placement, Battlefield Bodies & Core Authority (completed)
+
+---
+
+### Creature placement
+
+- `TurnPhase` now includes `'placing-creature'`.
+- `GameState` has a `pendingCreatureCardUid` field parallel to `pendingGeneratorCardUid`.
+- When the player clicks a CREATURE card, the UI enters the `placing-creature` phase and shows a prompt to click the lower battlefield half.
+- On canvas click, a `playCard` command is issued with `placement: { x, y }`.
+- `playCard` in `rules.ts` requires `placement` for all CREATURE cards; plays without it are rejected.
+- Placement is validated in both `commands.ts` (bounds + side check) and `rules.ts` (side guard with rejection).
+- Enemy AI assigns deterministic creature placement in the upper half (`y: 32..72`).
+
+### Creature sim positions
+
+- All creatures are given `simX/simY` from placement at play time.
+- The state hash already covers `simX/simY` per unit — no hash changes needed.
+
+### Battlefield creature renderer (`src/game/battlefieldEntities.ts`)
+
+- `renderCreatureEntities(ctx, gs)` — called from the main loop after `renderBaseStructures`.
+- Each creature type has a distinct pixel-art body:
+  - **Emberling**: fire-orange body with flame tips.
+  - **Water Wisp**: blue circular orb with inner glow.
+  - **Stone Mite**: grey stone-shelled crawler with glowing eyes.
+- A tiny HP bar is drawn above enemy creatures and below player creatures.
+- DOM unit cards in the sidebar remain for readability; the canvas body is the spatial reference.
+
+### Core cell authority (`src/game/state.ts`, `src/game/simDamage.ts`)
+
+- `base.maxHp` is now 13 (matching the 13 CORE cells in the initial diamond).
+- `countCoreCells(sim, base)` counts CORE cells within radius 5 of the base center.
+- `resolveSimDamage` calls `erodeCoreCells` each 30-tick cycle: CORE cells adjacent to FIRE/SPARK have a 4% chance of being removed from the grid.
+- After CORE erosion, `syncBaseHp` sets `base.hp = countCoreCells(...)` for each base.
+- The HP bar on the fortress now reflects actual remaining CORE cells.
+
+### Core-based win/loss
+
+- `checkWinLoss` in `rules.ts` now checks CORE cell counts, not generator counts.
+- If the player's core integrity reaches 0 → `status = 'lose'`.
+- If the enemy's core integrity reaches 0 → `status = 'win'`.
+- Win/loss overlay messages updated accordingly.
+
+### Particle damage improvements
+
+- WATER element creatures take much lower fire damage (8% vs 35%) — water resists fire.
+- Combat log entries for particle damage are throttled to one entry per unit per 3 seconds.
+- CORE cell erosion by fire is now the primary path to reducing base HP.
+
+### Reduced direct damage
+
+- Creature `playCard` no longer places creatures without sim positions — all creatures are physical.
+- Spell and attack direct HP damage remains as a temporary fallback for the abstract card combat layer.
+- TODO (sim-authority): route card attacks through sim particles so all damage resolves physically.
+
+### Strengthened command validation
+
+- `commands.ts` validates placement bounds (`[0, SIM_W) × [0, SIM_H)`).
+- Player creatures must be in the lower half (`y ≥ 90`); enemy in the upper half (`y < 90`).
+- Rejected commands record the reason in `_rejectedLog`.
+
+---
+
+### Current limitations (Phase 3)
+
+- **No creature movement.** Creatures stay at their placed position; they don't walk or chase.
+- **No creature–creature collision.** Multiple creatures can occupy the same cell.
+- **Creature attacks still abstract.** `attackTarget` subtracts HP directly; no sim particles are spawned. TODO: spawn element-specific particles from attacker toward target.
+- **CORE erosion is slow by design.** Low probability (4%) keeps early games playable. May need tuning once creatures spawn fire reliably near the enemy base.
+- **No replay file.** Command log is in-memory.
+- **No networking.** Hotseat only.
+
+---
+
 ### Next recommended phase
 
-**Phase 3: Creature sim placement & sim-primary damage**
+**Phase 4: Creature movement & sim-authority attacks**
 
-1. Assign `simX/simY` to creatures when played (placement prompt like generators).
-2. Render creature entities on the sim canvas.
-3. Link CORE cell destruction to `base.hp` — count remaining CORE cells, make that authoritative.
-4. Add core destruction as a win/loss condition (replace generator-based).
-5. Introduce a replay format: write `getCommandLog()` to `localStorage`; add `?replay=` loader.
-6. Add a `WALL` particle type (card-placed structures that block projectiles).
+1. Each creature walks toward the enemy base each tick (deterministic step logic).
+2. `attackTarget` spawns element particles toward the target's sim position instead of directly subtracting HP.
+3. Add a `WALL` particle type for card-placed structures.
+4. Write `getCommandLog()` to `localStorage` on game end; add a `?replay=` loader.

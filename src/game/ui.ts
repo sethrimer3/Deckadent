@@ -57,7 +57,7 @@ function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = 
 function handCard(card: CardInstance, gs: GameState): string {
   const def = CARD_DEFS[card.defId];
   const playable = canPlayCard(gs, card.uid);
-  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid || gs.pendingGeneratorCardUid === card.uid;
+  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid || gs.pendingGeneratorCardUid === card.uid || gs.pendingCreatureCardUid === card.uid;
   const cls = [
     'hand-card',
     playable ? 'playable' : 'unplayable',
@@ -119,6 +119,8 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     phaseMsg = `<div class="phase-msg">Select a target for your spell — or click elsewhere to cancel.</div>`;
   } else if (phase === 'placing-generator') {
     phaseMsg = `<div class="phase-msg">Click the simulation field to place your generator.</div>`;
+  } else if (phase === 'placing-creature') {
+    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your creature.</div>`;
   }
 
   const endTurnBtn = turn === 'player' && !gs.aiActing
@@ -184,7 +186,7 @@ ${status !== 'playing' ? `
 <div class="overlay">
   <div class="overlay-box">
     <div class="overlay-title">${status === 'win' ? '🏆 Victory!' : '💀 Defeat'}</div>
-    <div class="overlay-msg">${status === 'win' ? 'All enemy generators destroyed.' : 'All your generators destroyed.'}</div>
+    <div class="overlay-msg">${status === 'win' ? 'Enemy base core destroyed.' : 'Your base core was destroyed.'}</div>
     <button id="restart-btn">Restart</button>
   </div>
 </div>` : ''}
@@ -192,7 +194,7 @@ ${status !== 'playing' ? `
 
   const slot = appEl.querySelector('#canvas-slot');
   if (slot) slot.appendChild(_canvas);
-  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator');
+  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator' || gs.phase === 'placing-creature');
 
   bindEvents(gs, appEl);
 }
@@ -252,10 +254,13 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         return;
       }
 
-      // Creature: play immediately via command
-      applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid: uid });
-      gs.selectedCardUid = null;
-      gs.phase = 'main';
+      // Creature: enter placement phase so player clicks a battlefield position.
+      gs.pendingCreatureCardUid = uid;
+      gs.pendingSpellCardUid = null;
+      gs.pendingGeneratorCardUid = null;
+      gs.selectedCardUid = uid;
+      gs.phase = 'placing-creature';
+      gs.selectedAttackerUid = null;
       _renderFn();
     });
   });
@@ -285,20 +290,20 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   _canvas.onclick = e => {
     e.stopPropagation();
     if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
-    if (gs.phase !== 'placing-generator' || !gs.pendingGeneratorCardUid) return;
+
+    const isPlacingGen      = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
+    const isPlacingCreature = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
+    if (!isPlacingGen && !isPlacingCreature) return;
 
     const rect = _canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(_canvas.width - 1, Math.round(((e.clientX - rect.left) / rect.width) * _canvas.width)));
-    const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top) / rect.height) * _canvas.height)));
+    const x = Math.max(0, Math.min(_canvas.width - 1,  Math.round(((e.clientX - rect.left) / rect.width)  * _canvas.width)));
+    const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height)));
 
-    applyCommand(gs, {
-      kind: 'playCard',
-      tick: gs.tick,
-      owner: 'player',
-      cardUid: gs.pendingGeneratorCardUid,
-      placement: { x, y },
-    });
+    const cardUid = isPlacingGen ? gs.pendingGeneratorCardUid! : gs.pendingCreatureCardUid!;
+    applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
+
     gs.pendingGeneratorCardUid = null;
+    gs.pendingCreatureCardUid = null;
     gs.selectedCardUid = null;
     gs.phase = 'main';
     _renderFn();
@@ -345,6 +350,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       gs.selectedCardUid = null;
       gs.pendingSpellCardUid = null;
       gs.pendingGeneratorCardUid = null;
+      gs.pendingCreatureCardUid = null;
       _renderFn();
     }
   });

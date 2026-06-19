@@ -27,11 +27,14 @@ function computeNextAICommand(gs: GameState): Command | null {
     }
   }
 
-  // 2. Play creatures
+  // 2. Play creatures — deterministic placement in the upper half of the battlefield.
   for (const card of eps.hand) {
     const def = CARD_DEFS[card.defId];
     if (def.type === 'CREATURE' && def.cost <= eps.energy) {
-      return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid };
+      const idx = eps.creatures.length;
+      // Spread across upper half: x in [60..260], y in [32..72]
+      const placement = { x: 60 + (idx % 5) * 40, y: 32 + Math.floor(idx / 5) * 20 };
+      return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement };
     }
   }
 
