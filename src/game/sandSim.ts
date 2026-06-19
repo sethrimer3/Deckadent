@@ -1,3 +1,6 @@
+import { createPRNG, nextFloat, chance } from './prng';
+import type { PRNGState } from './prng';
+
 export const SIM_W = 320;
 export const SIM_H = 180;
 
@@ -16,6 +19,32 @@ const SPARK_MAX = 35;
 const SIZE = SIM_W * SIM_H;
 let grid: Particle[] = [];
 
+// ---------------------------------------------------------------------------
+// Sim PRNG — seeded, deterministic, separate from the gameplay PRNG so the
+// two can advance independently. Not yet serialized alongside game state but
+// structured to support that: use getSimPRNGState/setSimPRNGState.
+// TODO (see DESIGN_GUIDELINES.md §Simulation Authority): when the sim grid
+// becomes authoritative state, serialize simPrng alongside the grid.
+// ---------------------------------------------------------------------------
+let simPrng: PRNGState = createPRNG(0);
+
+export function initSimPRNG(seed: number): void {
+  simPrng = createPRNG(seed);
+}
+
+export function getSimPRNGState(): Readonly<PRNGState> {
+  return simPrng;
+}
+
+export function setSimPRNGState(state: PRNGState): void {
+  simPrng = { ...state };
+}
+
+/** Returns a random float [0, 1) from the deterministic sim PRNG. */
+export function simRand(): number {
+  return nextFloat(simPrng);
+}
+
 function empty(): Particle {
   return { type: 'EMPTY', lifetime: 0, moved: false };
 }
@@ -28,9 +57,9 @@ export function addParticle(x: number, y: number, type: ParticleType): void {
   const xi = Math.round(x);
   const yi = Math.round(y);
   if (xi < 0 || xi >= SIM_W || yi < 0 || yi >= SIM_H) return;
-  const lt = type === 'FIRE' ? FIRE_MAX + Math.random() * 20
-           : type === 'SMOKE' ? SMOKE_MAX + Math.random() * 20
-           : type === 'SPARK' ? SPARK_MAX + Math.random() * 15
+  const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(simPrng) * 20
+           : type === 'SMOKE' ? SMOKE_MAX + nextFloat(simPrng) * 20
+           : type === 'SPARK' ? SPARK_MAX + nextFloat(simPrng) * 15
            : 0;
   grid[yi * SIM_W + xi] = { type, lifetime: lt, moved: false };
 }
@@ -47,7 +76,6 @@ function moveTo(x: number, y: number, nx: number, ny: number): void {
   dst.moved = true;
   grid[y * SIM_W + x] = dst;
   grid[ny * SIM_W + nx] = src;
-  // After swap, the original particle is at (nx, ny); mark dest as moved so we don't re-process
   grid[ny * SIM_W + nx].moved = true;
 }
 
@@ -56,10 +84,8 @@ function isEmpty(x: number, y: number): boolean {
 }
 
 export function updateSim(): void {
-  // Clear moved flags
   for (let i = 0; i < SIZE; i++) grid[i].moved = false;
 
-  // Process bottom to top (falling), per-row alternating direction
   for (let y = SIM_H - 1; y >= 0; y--) {
     const ltr = (y & 1) === 0;
     for (let xi = 0; xi < SIM_W; xi++) {
@@ -68,9 +94,9 @@ export function updateSim(): void {
       if (p.moved || p.type === 'EMPTY') continue;
 
       switch (p.type) {
-        case 'SAND': stepSand(x, y); break;
+        case 'SAND':  stepSand(x, y); break;
         case 'WATER': stepWater(x, y); break;
-        case 'FIRE': stepFire(x, y, p); break;
+        case 'FIRE':  stepFire(x, y, p); break;
         case 'SMOKE': stepSmoke(x, y, p); break;
         case 'SPARK': stepSpark(x, y, p); break;
       }
@@ -82,7 +108,7 @@ function stepSand(x: number, y: number): void {
   if (y + 1 >= SIM_H) return;
   const below = g(x, y + 1).type;
   if (below === 'EMPTY' || below === 'WATER') { moveTo(x, y, x, y + 1); return; }
-  const d = Math.random() < 0.5 ? 1 : -1;
+  const d = chance(simPrng, 0.5) ? 1 : -1;
   if (x + d >= 0 && x + d < SIM_W && (g(x + d, y + 1).type === 'EMPTY' || g(x + d, y + 1).type === 'WATER')) {
     moveTo(x, y, x + d, y + 1); return;
   }
@@ -93,7 +119,6 @@ function stepSand(x: number, y: number): void {
 
 function stepWater(x: number, y: number): void {
   if (y + 1 < SIM_H && isEmpty(x, y + 1)) { moveTo(x, y, x, y + 1); return; }
-  // Check for fire to extinguish
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
     if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && g(nx, ny).type === 'FIRE') {
@@ -102,7 +127,7 @@ function stepWater(x: number, y: number): void {
       return;
     }
   }
-  const d = Math.random() < 0.5 ? 1 : -1;
+  const d = chance(simPrng, 0.5) ? 1 : -1;
   if (x + d >= 0 && x + d < SIM_W && isEmpty(x + d, y)) { moveTo(x, y, x + d, y); return; }
   if (x - d >= 0 && x - d < SIM_W && isEmpty(x - d, y)) { moveTo(x, y, x - d, y); }
 }
@@ -110,12 +135,11 @@ function stepWater(x: number, y: number): void {
 function stepFire(x: number, y: number, p: Particle): void {
   p.lifetime--;
   if (p.lifetime <= 0) {
-    grid[y * SIM_W + x] = Math.random() < 0.35
+    grid[y * SIM_W + x] = chance(simPrng, 0.35)
       ? { type: 'SMOKE', lifetime: SMOKE_MAX, moved: true }
       : empty();
     return;
   }
-  // Extinguished by adjacent water
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, 1], [0, -1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
     if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && g(nx, ny).type === 'WATER') {
@@ -124,13 +148,11 @@ function stepFire(x: number, y: number, p: Particle): void {
       return;
     }
   }
-  // Rise
-  if (y - 1 >= 0 && isEmpty(x, y - 1) && Math.random() < 0.25) {
+  if (y - 1 >= 0 && isEmpty(x, y - 1) && chance(simPrng, 0.25)) {
     moveTo(x, y, x, y - 1); return;
   }
-  // Spread sideways creating new small fires
-  if (Math.random() < 0.06) {
-    const dx = Math.random() < 0.5 ? 1 : -1;
+  if (chance(simPrng, 0.06)) {
+    const dx = chance(simPrng, 0.5) ? 1 : -1;
     const nx = x + dx;
     if (nx >= 0 && nx < SIM_W && isEmpty(nx, y)) {
       grid[y * SIM_W + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4), moved: true };
@@ -141,11 +163,11 @@ function stepFire(x: number, y: number, p: Particle): void {
 function stepSmoke(x: number, y: number, p: Particle): void {
   p.lifetime--;
   if (p.lifetime <= 0) { grid[y * SIM_W + x] = empty(); return; }
-  if (y - 1 >= 0 && isEmpty(x, y - 1) && Math.random() < 0.35) {
+  if (y - 1 >= 0 && isEmpty(x, y - 1) && chance(simPrng, 0.35)) {
     moveTo(x, y, x, y - 1); return;
   }
-  const d = Math.random() < 0.5 ? 1 : -1;
-  if (x + d >= 0 && x + d < SIM_W && y - 1 >= 0 && isEmpty(x + d, y - 1) && Math.random() < 0.15) {
+  const d = chance(simPrng, 0.5) ? 1 : -1;
+  if (x + d >= 0 && x + d < SIM_W && y - 1 >= 0 && isEmpty(x + d, y - 1) && chance(simPrng, 0.15)) {
     moveTo(x, y, x + d, y - 1);
   }
 }
@@ -153,24 +175,21 @@ function stepSmoke(x: number, y: number, p: Particle): void {
 function stepSpark(x: number, y: number, p: Particle): void {
   p.lifetime--;
   if (p.lifetime <= 0) { grid[y * SIM_W + x] = empty(); return; }
-  // Occasionally ignite adjacent empty cells
-  if (Math.random() < 0.08) {
-    const nx = x + Math.round((Math.random() - 0.5) * 2);
-    const ny = y + Math.round((Math.random() - 0.5) * 2);
+  if (chance(simPrng, 0.08)) {
+    const nx = x + (chance(simPrng, 0.5) ? 1 : -1);
+    const ny = y + (chance(simPrng, 0.5) ? 1 : -1);
     if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && isEmpty(nx, ny)) {
       grid[ny * SIM_W + nx] = { type: 'FIRE', lifetime: FIRE_MAX, moved: true };
     }
   }
-  // Move randomly with upward bias
-  const dx = Math.round((Math.random() - 0.5) * 2);
-  const dy = Math.random() < 0.55 ? -1 : Math.round((Math.random() - 0.5) * 2);
+  const dx = chance(simPrng, 0.5) ? 1 : -1;
+  const dy = chance(simPrng, 0.55) ? -1 : (chance(simPrng, 0.5) ? 1 : -1);
   const nx = x + dx, ny = y + dy;
   if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && isEmpty(nx, ny)) {
     moveTo(x, y, nx, ny);
   }
 }
 
-// Particle colors as [r, g, b]
 const COLORS: Record<ParticleType, readonly [number, number, number]> = {
   EMPTY: [15, 10, 28],
   WATER: [40, 110, 230],
@@ -191,7 +210,7 @@ export function renderSim(ctx: CanvasRenderingContext2D): void {
       d[pi] = 15; d[pi + 1] = 10; d[pi + 2] = 28; d[pi + 3] = 255;
     } else {
       const [r, g, b] = COLORS[p.type];
-      // Slight flicker for fire/spark
+      // VISUAL-ONLY: fire/spark flicker uses Math.random — not gameplay-affecting.
       const jitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
       d[pi]     = Math.min(255, r + jitter);
       d[pi + 1] = Math.min(255, g + (p.type === 'FIRE' ? jitter * 0.5 : 0));

@@ -1,6 +1,8 @@
 import type { GameState, UnitInstance, CardInstance } from './types';
 import { CARD_DEFS } from './cards';
-import { canPlayCard, playCard, attackTarget, endTurn } from './rules';
+import { canPlayCard } from './rules';
+import { applyCommand } from './commands';
+import { hashHex } from './stateHash';
 import { runEnemyTurn } from './ai';
 
 const ELEMENT_COLOR: Record<string, string> = {
@@ -74,16 +76,11 @@ function handCard(card: CardInstance, gs: GameState): string {
   </div>`;
 }
 
-function currentTurn(gs: GameState): GameState['turn'] {
-  return gs.turn;
-}
-
 // ─── Main render ─────────────────────────────────────────────────────────────
 
 export function renderUI(gs: GameState, appEl: HTMLElement): void {
   const { player, enemy, turn, phase, status } = gs;
 
-  // Determine which units are valid attack targets (highlight)
   const attackerId = gs.selectedAttackerUid;
   const isTargetingAttack = phase === 'targeting-attack' && attackerId && turn === 'player';
   const isTargetingSpell  = phase === 'targeting-spell' && turn === 'player';
@@ -129,6 +126,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     : `<button class="end-turn-btn" disabled>End Turn</button>`;
 
   const logLines = gs.combatLog.slice(-12).map(l => `<div class="log-line">${l}</div>`).join('');
+  const stateHash = hashHex(gs);
 
   appEl.innerHTML = `
 <div class="game-root">
@@ -138,6 +136,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     <b>Deckadent</b> — Turn: <span class="turn-label ${turn}">${turn.toUpperCase()}</span>
     &nbsp;|&nbsp; Energy: <span class="energy">${turn === 'player' ? player.energy : enemy.energy}</span>
     &nbsp;|&nbsp; Deck: ${player.deck.length} · Discard: ${player.discard.length}
+    &nbsp;|&nbsp; <span class="debug-hash" title="Deterministic state hash (tick ${gs.tick})">⬡ ${stateHash}</span>
     <span class="hint">Play generators → get energy. Creatures attack once per turn. Spells need a target.</span>
   </div>
 
@@ -191,7 +190,6 @@ ${status !== 'playing' ? `
 </div>` : ''}
 `;
 
-  // Mount canvas into slot
   const slot = appEl.querySelector('#canvas-slot');
   if (slot) slot.appendChild(_canvas);
   _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator');
@@ -202,7 +200,6 @@ ${status !== 'playing' ? `
 // ─── Event binding ────────────────────────────────────────────────────────────
 
 function bindEvents(gs: GameState, appEl: HTMLElement): void {
-  // End turn
   appEl.querySelector('#end-turn-btn')?.addEventListener('click', () => {
     if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
     gs.selectedCardUid = null;
@@ -210,26 +207,20 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     gs.pendingSpellCardUid = null;
     gs.pendingGeneratorCardUid = null;
     gs.phase = 'main';
-    endTurn(gs);
-    const nextTurn = currentTurn(gs);
+    applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: 'player' });
     _renderFn();
-    // Kick off AI
+    const nextTurn: string = gs.turn;
     if (nextTurn === 'enemy') {
       runEnemyTurn(gs, _renderFn, () => {
-        if (gs.status === 'playing') {
-          // Already flipped back to player in endTurn inside runEnemyTurn
-          _renderFn();
-        }
+        if (gs.status === 'playing') _renderFn();
       });
     }
   });
 
-  // Restart
   appEl.querySelector('#restart-btn')?.addEventListener('click', () => {
     window.location.reload();
   });
 
-  // Hand cards
   appEl.querySelectorAll('[data-card-uid]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -242,7 +233,6 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       if (!canPlayCard(gs, uid)) return;
 
       if (def.type === 'SPELL') {
-        // Enter targeting mode
         gs.pendingSpellCardUid = uid;
         gs.pendingGeneratorCardUid = null;
         gs.selectedCardUid = uid;
@@ -262,15 +252,14 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         return;
       }
 
-      // Creature: play immediately
-      playCard(gs, uid);
+      // Creature: play immediately via command
+      applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid: uid });
       gs.selectedCardUid = null;
       gs.phase = 'main';
       _renderFn();
     });
   });
 
-  // Attacker selection (player creatures with data-attacker)
   appEl.querySelectorAll('[data-attacker]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -280,7 +269,6 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       if (!creature || creature.hasAttacked) return;
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid === uid) {
-        // Deselect
         gs.phase = 'main';
         gs.selectedAttackerUid = null;
       } else {
@@ -302,14 +290,20 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     const rect = _canvas.getBoundingClientRect();
     const x = Math.max(0, Math.min(_canvas.width - 1, Math.round(((e.clientX - rect.left) / rect.width) * _canvas.width)));
     const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top) / rect.height) * _canvas.height)));
-    playCard(gs, gs.pendingGeneratorCardUid, undefined, { x, y });
+
+    applyCommand(gs, {
+      kind: 'playCard',
+      tick: gs.tick,
+      owner: 'player',
+      cardUid: gs.pendingGeneratorCardUid,
+      placement: { x, y },
+    });
     gs.pendingGeneratorCardUid = null;
     gs.selectedCardUid = null;
     gs.phase = 'main';
     _renderFn();
   };
 
-  // Target selection (enemy units)
   appEl.querySelectorAll('[data-target]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
@@ -317,12 +311,24 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       const targetUid = (el as HTMLElement).dataset.target!;
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid) {
-        attackTarget(gs, gs.selectedAttackerUid, targetUid);
+        applyCommand(gs, {
+          kind: 'attackTarget',
+          tick: gs.tick,
+          owner: 'player',
+          attackerUid: gs.selectedAttackerUid,
+          targetUid,
+        });
         gs.selectedAttackerUid = null;
         gs.phase = 'main';
         _renderFn();
       } else if (gs.phase === 'targeting-spell' && gs.pendingSpellCardUid) {
-        playCard(gs, gs.pendingSpellCardUid, targetUid);
+        applyCommand(gs, {
+          kind: 'playCard',
+          tick: gs.tick,
+          owner: 'player',
+          cardUid: gs.pendingSpellCardUid,
+          targetUid,
+        });
         gs.pendingSpellCardUid = null;
         gs.selectedCardUid = null;
         gs.pendingGeneratorCardUid = null;
@@ -332,7 +338,6 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     });
   });
 
-  // Click backdrop to cancel targeting
   appEl.querySelector('.game-root')?.addEventListener('click', () => {
     if (gs.phase !== 'main') {
       gs.phase = 'main';

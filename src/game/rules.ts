@@ -26,7 +26,7 @@ export function canPlayCard(gs: GameState, cardUid: string): boolean {
 }
 
 // Play a card for the active turn player.
-// For spells, targetUid must be provided. For generators, placement can set sim coordinates.
+// Validates all preconditions before mutating any state — no partial mutations on failure.
 export function playCard(
   gs: GameState,
   cardUid: string,
@@ -42,12 +42,11 @@ export function playCard(
   const def = CARD_DEFS[card.defId];
   if (ps.energy < def.cost) return false;
 
-  ps.energy -= def.cost;
-  ps.hand.splice(cardIdx, 1);
-
   const label = owner === 'player' ? 'Player' : 'Enemy';
 
   if (def.type === 'GENERATOR') {
+    ps.energy -= def.cost;
+    ps.hand.splice(cardIdx, 1);
     ps.generators.push({
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
@@ -61,6 +60,8 @@ export function playCard(
   }
 
   if (def.type === 'CREATURE') {
+    ps.energy -= def.cost;
+    ps.hand.splice(cardIdx, 1);
     ps.creatures.push({
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
@@ -72,14 +73,16 @@ export function playCard(
   }
 
   if (def.type === 'SPELL') {
+    // Validate target BEFORE any mutation. Invalid targets return false with no side effects.
     if (!targetUid) return false;
     const target = findUnit(gs, targetUid);
     if (!target) return false;
+
+    ps.energy -= def.cost;
+    ps.hand.splice(cardIdx, 1);
+
     const dmg = def.spellDamage ?? 1;
-
-    // Trigger visual effect BEFORE applying damage (unit still in board for position lookup)
     triggerEffect(gs, def.effectKey, null, targetUid);
-
     target.hp -= dmg;
     gs.combatLog.push(`${label} casts ${def.name} on ${CARD_DEFS[target.defId].name} for ${dmg} damage.`);
     ps.discard.push(card);
@@ -91,7 +94,6 @@ export function playCard(
   return false;
 }
 
-// Attack from active player's creature to opponent's unit.
 export function attackTarget(gs: GameState, attackerUid: string, targetUid: string): boolean {
   const owner: Owner = gs.turn;
   const aps = owner === 'player' ? gs.player : gs.enemy;
@@ -103,7 +105,6 @@ export function attackTarget(gs: GameState, attackerUid: string, targetUid: stri
   const target = dps.generators.find(u => u.uid === targetUid) ?? dps.creatures.find(u => u.uid === targetUid);
   if (!target) return false;
 
-  // Trigger effect before damage so positions are still valid
   const def = CARD_DEFS[attacker.defId];
   triggerEffect(gs, def.effectKey, attackerUid, targetUid);
 
@@ -129,6 +130,8 @@ export function destroyDeadUnits(gs: GameState): void {
   }
 }
 
+// TODO (see DESIGN_GUIDELINES.md §Physical Bases & Cores): replace generator-based
+// win/loss with core destruction once bases are fully simulated entities.
 export function checkWinLoss(gs: GameState): void {
   if (gs.status !== 'playing') return;
   if (gs.player.generators.length === 0) {

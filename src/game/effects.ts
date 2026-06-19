@@ -1,4 +1,4 @@
-import { addParticle, SIM_W, SIM_H } from './sandSim';
+import { addParticle, simRand, SIM_W, SIM_H } from './sandSim';
 import type { GameState, Owner, UnitInstance } from './types';
 
 function calcSimPos(
@@ -48,7 +48,7 @@ export function spawnWaterBeam(fx: number, fy: number, tx: number, ty: number): 
     const x = Math.round(fx + dx * t);
     const y = Math.round(fy + dy * t);
     addParticle(x, y, 'WATER');
-    if (Math.random() < 0.4) addParticle(x + (Math.random() < 0.5 ? 1 : -1), y, 'WATER');
+    if (simRand() < 0.4) addParticle(x + (simRand() < 0.5 ? 1 : -1), y, 'WATER');
   }
 }
 
@@ -58,22 +58,25 @@ export function spawnFireSpray(fx: number, fy: number, tx: number, ty: number): 
   const steps = Math.ceil(len * 0.75);
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const x = Math.round(fx + dx * t + (Math.random() - 0.5) * 7);
-    const y = Math.round(fy + dy * t + (Math.random() - 0.5) * 7);
-    addParticle(x, y, Math.random() < 0.5 ? 'SPARK' : 'FIRE');
+    const x = Math.round(fx + dx * t + (simRand() - 0.5) * 7);
+    const y = Math.round(fy + dy * t + (simRand() - 0.5) * 7);
+    addParticle(x, y, simRand() < 0.5 ? 'SPARK' : 'FIRE');
   }
   for (let i = 0; i < 18; i++) {
-    addParticle(tx + Math.round((Math.random() - 0.5) * 14), ty + Math.round((Math.random() - 0.5) * 14), 'FIRE');
+    addParticle(
+      tx + Math.round((simRand() - 0.5) * 14),
+      ty + Math.round((simRand() - 0.5) * 14),
+      'FIRE'
+    );
   }
 }
 
 export function spawnSandBurst(fx: number, fy: number, tx: number, ty: number): void {
-  // Ignore fx/fy — drop sand from above the target
   void fx; void fy;
   for (let i = 0; i < 45; i++) {
     addParticle(
-      tx + Math.round((Math.random() - 0.5) * 26),
-      ty - 30 - Math.round(Math.random() * 25),
+      tx + Math.round((simRand() - 0.5) * 26),
+      ty - 30 - Math.round(simRand() * 25),
       'SAND'
     );
   }
