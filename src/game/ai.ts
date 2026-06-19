@@ -38,23 +38,27 @@ function computeNextAICommand(gs: GameState): Command | null {
     }
   }
 
-  // 3. Cast spells
+  // 3. Cast spells — prefer unit targets; fall back to player base.
   for (const card of eps.hand) {
     const def = CARD_DEFS[card.defId];
     if (def.type === 'SPELL' && def.cost <= eps.energy) {
       const target = pps.creatures[0] ?? pps.generators[0];
       if (target) {
         return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, targetUid: target.uid };
+      } else {
+        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, targetBase: 'player' };
       }
     }
   }
 
-  // 4. Attack with each ready creature (one attack per call — called repeatedly)
+  // 4. Attack with each ready creature — prefer unit targets; fall back to player base.
   for (const creature of eps.creatures) {
     if (creature.hasAttacked) continue;
     const target = pps.creatures[0] ?? pps.generators[0];
     if (target) {
       return { kind: 'attackTarget', tick: gs.tick, owner: 'enemy', attackerUid: creature.uid, targetUid: target.uid };
+    } else {
+      return { kind: 'attackTarget', tick: gs.tick, owner: 'enemy', attackerUid: creature.uid, targetBase: 'player' };
     }
   }
 

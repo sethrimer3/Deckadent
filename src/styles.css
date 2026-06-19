@@ -362,3 +362,31 @@ body {
   margin-top: 8px;
 }
 .overlay-box button:hover { background: #9c6fff; }
+
+/* Base targeting button */
+.base-target-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 5px 8px;
+  background: #2a0a0a;
+  border: 2px solid #f88;
+  border-radius: 6px;
+  color: #faa;
+  font-size: 10px;
+  font-weight: bold;
+  cursor: crosshair;
+  box-shadow: 0 0 8px rgba(255,60,60,0.4);
+  text-align: center;
+}
+.base-target-btn:hover {
+  background: #3d1010;
+  box-shadow: 0 0 14px rgba(255,60,60,0.7);
+  transform: scale(1.03);
+}
+.base-hp-info {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  text-align: center;
+}

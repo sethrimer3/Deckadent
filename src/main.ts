@@ -5,6 +5,7 @@ import { initUI, renderUI } from './game/ui';
 import { renderGeneratorStructures, renderBaseStructures } from './game/generatorVisuals';
 import { renderCreatureEntities } from './game/battlefieldEntities';
 import { resolveSimDamage } from './game/simDamage';
+import { updateCombatEffects } from './game/combatEffects';
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
 const canvas = document.createElement('canvas');
@@ -55,8 +56,9 @@ function loop(ts: number): void {
 
   while (accumulator >= FIXED_DT && tickCount < MAX_TICKS_PER_FRAME) {
     gs.tick++;
+    updateCombatEffects(gs); // spawn particles from pending effects before sim step
     updateSim(gs.sim);
-    resolveSimDamage(gs);   // particle-overlap damage check (runs every 30 ticks)
+    resolveSimDamage(gs);    // particle-overlap damage check (runs every 30 ticks)
     accumulator -= FIXED_DT;
     tickCount++;
     ticked = true;

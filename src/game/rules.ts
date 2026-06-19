@@ -1,8 +1,9 @@
 import type { GameState, UnitInstance, Owner } from './types';
 import { CARD_DEFS } from './cards';
 import { newUid, startTurn, countCoreCells } from './state';
-import { triggerEffect } from './effects';
 import { SIM_W, SIM_H } from './sandSim';
+import { enqueueEffect, elementToEffectKind } from './combatEffects';
+import { getUnitFootprint } from './footprint';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -28,16 +29,29 @@ export function canPlayCard(gs: GameState, cardUid: string): boolean {
   return gs.player.energy >= CARD_DEFS[card.defId].cost;
 }
 
-// Play a card for the active turn player.
-// Validates all preconditions before mutating any state — no partial mutations on failure.
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Get the sim center of a unit or fall back to a default column position. */
+function unitPos(unit: UnitInstance, fallbackX: number, fallbackY: number): { x: number; y: number } {
+  const fp = getUnitFootprint(unit);
+  return fp ? { x: fp.cx, y: fp.cy } : { x: fallbackX, y: fallbackY };
+}
+
+// ---------------------------------------------------------------------------
+// playCard — validates all preconditions before any mutation.
+// ---------------------------------------------------------------------------
 export function playCard(
   gs: GameState,
   cardUid: string,
   targetUid?: string,
-  placement?: { x: number; y: number }
+  placement?: { x: number; y: number },
+  targetBase?: Owner,
 ): boolean {
   const owner: Owner = gs.turn;
   const ps = owner === 'player' ? gs.player : gs.enemy;
+  const opp = owner === 'player' ? gs.enemy : gs.player;
 
   const cardIdx = ps.hand.findIndex(c => c.uid === cardUid);
   if (cardIdx === -1) return false;
@@ -47,6 +61,7 @@ export function playCard(
 
   const label = owner === 'player' ? 'Player' : 'Enemy';
 
+  // ── GENERATOR ──────────────────────────────────────────────────────────────
   if (def.type === 'GENERATOR') {
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
@@ -62,9 +77,8 @@ export function playCard(
     return true;
   }
 
+  // ── CREATURE ───────────────────────────────────────────────────────────────
   if (def.type === 'CREATURE') {
-    // Creatures must be placed onto the battlefield at a valid position.
-    // Player creatures: lower half (y >= SIM_H/2). Enemy: upper half (y < SIM_H/2).
     if (!placement) return false;
     const halfY = SIM_H / 2;
     if (owner === 'player' && placement.y < halfY) return false;
@@ -85,50 +99,96 @@ export function playCard(
     return true;
   }
 
+  // ── SPELL ──────────────────────────────────────────────────────────────────
   if (def.type === 'SPELL') {
-    // Validate target BEFORE any mutation. Invalid targets return false with no side effects.
-    if (!targetUid) return false;
-    const target = findUnit(gs, targetUid);
-    if (!target) return false;
+    // Must have exactly one of: targetUid or targetBase.
+    const hasUnit = !!targetUid;
+    const hasBase = !!targetBase;
+    if (!hasUnit && !hasBase) return false;
+    if (hasUnit && hasBase) return false;
+
+    let targetPos: { x: number; y: number };
+    let targetName: string;
+
+    if (hasUnit) {
+      const target = findUnit(gs, targetUid!);
+      if (!target) return false;
+      targetPos = unitPos(target, SIM_W / 2, SIM_H / 2);
+      targetName = CARD_DEFS[target.defId].name;
+    } else {
+      // targetBase must be opponent's base
+      if (targetBase !== (owner === 'player' ? 'enemy' : 'player')) return false;
+      const base = targetBase === 'player' ? gs.player.base : gs.enemy.base;
+      targetPos = { x: base.simX, y: base.simY };
+      targetName = `${targetBase} base`;
+    }
+
+    // Source position: spell comes from the caster's base or midfield
+    const sourcePos = { x: ps.base.simX, y: ps.base.simY };
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
 
-    const dmg = def.spellDamage ?? 1;
-    triggerEffect(gs, def.effectKey, null, targetUid);
-    target.hp -= dmg;
-    gs.combatLog.push(`${label} casts ${def.name} on ${CARD_DEFS[target.defId].name} for ${dmg} damage.`);
+    enqueueEffect(gs, owner, def.element, sourcePos, targetPos);
+    gs.combatLog.push(
+      `${label} casts ${def.name} → ${elementToEffectKind(def.element)} toward ${targetName}.`
+    );
     ps.discard.push(card);
-    destroyDeadUnits(gs);
-    checkWinLoss(gs);
+    // No direct HP subtraction — damage resolves through sim particles.
     return true;
   }
 
   return false;
 }
 
-export function attackTarget(gs: GameState, attackerUid: string, targetUid: string): boolean {
+// ---------------------------------------------------------------------------
+// attackTarget — marks hasAttacked and enqueues a CombatEffect.
+// No direct HP subtraction; damage resolves through simDamage.ts.
+// ---------------------------------------------------------------------------
+export function attackTarget(
+  gs: GameState,
+  attackerUid: string,
+  targetUid?: string,
+  targetBase?: Owner,
+): boolean {
   const owner: Owner = gs.turn;
   const aps = owner === 'player' ? gs.player : gs.enemy;
-  const dps = owner === 'player' ? gs.enemy : gs.player;
 
   const attacker = aps.creatures.find(u => u.uid === attackerUid);
   if (!attacker || attacker.hasAttacked) return false;
 
-  const target = dps.generators.find(u => u.uid === targetUid) ?? dps.creatures.find(u => u.uid === targetUid);
-  if (!target) return false;
+  // Attacker must have a sim position to fire from.
+  const srcFp = getUnitFootprint(attacker);
+  if (!srcFp) return false;
+  const sourcePos = { x: srcFp.cx, y: srcFp.cy };
+
+  let targetPos: { x: number; y: number };
+  let targetName: string;
+
+  if (targetUid) {
+    const dps = owner === 'player' ? gs.enemy : gs.player;
+    const target = dps.generators.find(u => u.uid === targetUid) ?? dps.creatures.find(u => u.uid === targetUid);
+    if (!target) return false;
+    targetPos = unitPos(target, SIM_W / 2, SIM_H / 2);
+    targetName = CARD_DEFS[target.defId].name;
+  } else if (targetBase) {
+    const oppOwner = owner === 'player' ? 'enemy' : 'player';
+    if (targetBase !== oppOwner) return false;
+    const base = targetBase === 'player' ? gs.player.base : gs.enemy.base;
+    targetPos = { x: base.simX, y: base.simY };
+    targetName = `${targetBase} base`;
+  } else {
+    return false;
+  }
 
   const def = CARD_DEFS[attacker.defId];
-  triggerEffect(gs, def.effectKey, attackerUid, targetUid);
-
   attacker.hasAttacked = true;
-  target.hp -= attacker.attack;
+
+  enqueueEffect(gs, owner, def.element, sourcePos, targetPos);
   gs.combatLog.push(
-    `${def.name} attacks ${CARD_DEFS[target.defId].name} for ${attacker.attack} damage. (${target.hp}/${target.maxHp} HP left)`
+    `${def.name} fires ${elementToEffectKind(def.element)} toward ${targetName}.`
   );
 
-  destroyDeadUnits(gs);
-  checkWinLoss(gs);
   return true;
 }
 
@@ -145,7 +205,6 @@ export function destroyDeadUnits(gs: GameState): void {
 
 export function checkWinLoss(gs: GameState): void {
   if (gs.status !== 'playing') return;
-  // Primary win condition: base core integrity reaches zero.
   const playerCores = countCoreCells(gs.sim, gs.player.base);
   const enemyCores  = countCoreCells(gs.sim, gs.enemy.base);
   if (playerCores === 0) {

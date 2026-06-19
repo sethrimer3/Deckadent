@@ -7,6 +7,9 @@ import { createSimState } from './sandSim';
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
 
+let _effectId = 0;
+export function newEffectId(): string { return `fx${++_effectId}`; }
+
 /** Fisher-Yates shuffle using the seeded gameplay PRNG. No Math.random. */
 export function shuffle<T>(arr: T[], prng: PRNGState): T[] {
   const a = [...arr];
@@ -137,6 +140,7 @@ export function createInitialGameState(seed?: number): GameState {
     pendingSpellCardUid: null,
     pendingGeneratorCardUid: null,
     pendingCreatureCardUid: null,
+    combatEffects: [],
     combatLog: [
       `Game started — Player goes first! (seed: ${initialSeed.toString(16)})`,
       'Play generators to increase energy. Creatures attack once per turn.',

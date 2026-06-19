@@ -98,6 +98,14 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     unitCard(u, `creature ${targetClass(u.uid, 'enemy')}`, isTargetingAttack || isTargetingSpell, `data-target="${u.uid}"`)
   ).join('');
 
+  // Base target button — shown in enemy zone when targeting attack or spell.
+  const baseTargetBtn = (isTargetingAttack || isTargetingSpell)
+    ? `<button class="base-target-btn valid-target" data-target-base="enemy"
+         title="Target enemy base core (HP ${enemy.base.hp}/${enemy.base.maxHp})">
+         ⚔ Enemy Base (${enemy.base.hp}/${enemy.base.maxHp} core)
+       </button>`
+    : `<div class="base-hp-info">Base: ${enemy.base.hp}/${enemy.base.maxHp} core</div>`;
+
   const playerCreatureCards = player.creatures.map(u => {
     const ready = !u.hasAttacked && turn === 'player' && phase === 'main' && !gs.aiActing;
     const sel = gs.selectedAttackerUid === u.uid ? ' attacker-selected' : '';
@@ -146,6 +154,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     <!-- Player side -->
     <div class="side player-side">
       <div class="side-title">Player</div>
+      <div class="base-hp-info">Base: ${player.base.hp}/${player.base.maxHp} core</div>
       <div class="zone-label">Creatures (${player.creatures.length})</div>
       <div class="unit-row creatures">${playerCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
       <div class="zone-label">Generators (${player.generators.length}) · Energy ${player.energy}/${player.generators.length}</div>
@@ -161,6 +170,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     <!-- Opponent side -->
     <div class="side enemy-side">
       <div class="side-title">Opponent</div>
+      ${baseTargetBtn}
       <div class="zone-label">Creatures (${enemy.creatures.length})</div>
       <div class="unit-row creatures">${enemyCreatureCards || '<span class="empty-zone">No creatures</span>'}</div>
       <div class="zone-label">Generators (${enemy.generators.length}) · Energy ${enemy.energy}</div>
@@ -300,12 +310,15 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height)));
 
     const cardUid = isPlacingGen ? gs.pendingGeneratorCardUid! : gs.pendingCreatureCardUid!;
-    applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
+    const ok = applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
 
-    gs.pendingGeneratorCardUid = null;
-    gs.pendingCreatureCardUid = null;
-    gs.selectedCardUid = null;
-    gs.phase = 'main';
+    // Only clear placement state on success — rejected placements keep the phase active.
+    if (ok) {
+      gs.pendingGeneratorCardUid = null;
+      gs.pendingCreatureCardUid = null;
+      gs.selectedCardUid = null;
+      gs.phase = 'main';
+    }
     _renderFn();
   };
 
@@ -316,28 +329,49 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       const targetUid = (el as HTMLElement).dataset.target!;
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid) {
-        applyCommand(gs, {
-          kind: 'attackTarget',
-          tick: gs.tick,
-          owner: 'player',
-          attackerUid: gs.selectedAttackerUid,
-          targetUid,
+        const ok = applyCommand(gs, {
+          kind: 'attackTarget', tick: gs.tick, owner: 'player',
+          attackerUid: gs.selectedAttackerUid, targetUid,
         });
-        gs.selectedAttackerUid = null;
-        gs.phase = 'main';
+        if (ok) { gs.selectedAttackerUid = null; gs.phase = 'main'; }
         _renderFn();
       } else if (gs.phase === 'targeting-spell' && gs.pendingSpellCardUid) {
-        applyCommand(gs, {
-          kind: 'playCard',
-          tick: gs.tick,
-          owner: 'player',
-          cardUid: gs.pendingSpellCardUid,
-          targetUid,
+        const ok = applyCommand(gs, {
+          kind: 'playCard', tick: gs.tick, owner: 'player',
+          cardUid: gs.pendingSpellCardUid, targetUid,
         });
-        gs.pendingSpellCardUid = null;
-        gs.selectedCardUid = null;
-        gs.pendingGeneratorCardUid = null;
-        gs.phase = 'main';
+        if (ok) {
+          gs.pendingSpellCardUid = null; gs.selectedCardUid = null;
+          gs.pendingGeneratorCardUid = null; gs.phase = 'main';
+        }
+        _renderFn();
+      }
+    });
+  });
+
+  // Base targeting — fires at enemy base directly.
+  appEl.querySelectorAll('[data-target-base]').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+      const targetBase = (el as HTMLElement).dataset.targetBase as 'player' | 'enemy';
+
+      if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid) {
+        const ok = applyCommand(gs, {
+          kind: 'attackTarget', tick: gs.tick, owner: 'player',
+          attackerUid: gs.selectedAttackerUid, targetBase,
+        });
+        if (ok) { gs.selectedAttackerUid = null; gs.phase = 'main'; }
+        _renderFn();
+      } else if (gs.phase === 'targeting-spell' && gs.pendingSpellCardUid) {
+        const ok = applyCommand(gs, {
+          kind: 'playCard', tick: gs.tick, owner: 'player',
+          cardUid: gs.pendingSpellCardUid, targetBase,
+        });
+        if (ok) {
+          gs.pendingSpellCardUid = null; gs.selectedCardUid = null;
+          gs.pendingGeneratorCardUid = null; gs.phase = 'main';
+        }
         _renderFn();
       }
     });

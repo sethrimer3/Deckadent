@@ -98,6 +98,19 @@ export function hashGameState(gs: GameState): number {
   h = hashPlayerState(h, gs.player);
   h = hashPlayerState(h, gs.enemy);
   h = hashSimState(h, gs.sim);
+  // Hash active combat effects — they are authoritative (drive particle spawning).
+  h = djb2Update(h, gs.combatEffects.length);
+  for (const fx of gs.combatEffects) {
+    h = hashString(h, fx.id);
+    h = hashString(h, fx.element);
+    h = hashString(h, fx.effectKind);
+    h = djb2Update(h, fx.sourcePos.x);
+    h = djb2Update(h, fx.sourcePos.y);
+    h = djb2Update(h, fx.targetPos.x);
+    h = djb2Update(h, fx.targetPos.y);
+    h = djb2Update(h, fx.startTick);
+    h = djb2Update(h, fx.durationTicks);
+  }
   return h;
 }
 

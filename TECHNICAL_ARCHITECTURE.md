@@ -235,11 +235,80 @@ and attacks (in `rules.ts`) remains the primary damage source.
 
 ---
 
+---
+
+## Phase 4: Sim-Authority Attacks & CombatEffect System (completed)
+
+---
+
+### CombatEffect system (`src/game/combatEffects.ts`, `src/game/types.ts`)
+
+- `CombatEffect` is a serializable authoritative record stored in `gs.combatEffects[]`.
+- Fields: `id`, `owner`, `element`, `effectKind` (`beam|spray|burst`), `sourcePos`, `targetPos`, `startTick`, `durationTicks`.
+- Positions are captured at enqueue time — deterministic even if source/target moves or dies.
+- `enqueueEffect(gs, owner, element, sourcePos, targetPos)` adds an effect.
+- `updateCombatEffects(gs)` runs every tick (before `updateSim`), spawning a slice of particles per effect:
+  - **beam** (WATER, 10 ticks): 3 water particles along the line + splash at target per tick.
+  - **spray** (FIRE, 8 ticks): 4 fire/spark scattered toward target per tick.
+  - **burst** (EARTH, 6 ticks): 8→5→2 sand particles dropped above target, tapering.
+- Effects expire and are removed when `durationTicks` is exhausted.
+- `combatEffects` is included in `stateHash.ts`.
+
+### Sim-authority attacks and spells (`src/game/rules.ts`)
+
+- `attackTarget` no longer subtracts HP directly. It marks `hasAttacked = true` and calls `enqueueEffect`.
+- `playCard` (SPELL) no longer subtracts HP. It spends energy, discards, and calls `enqueueEffect`.
+- Combat log reads: `"Emberling fires spray toward enemy base."` not `"for N damage."`
+- All damage now resolves through `simDamage.ts` via particle contact.
+- `elementToEffectKind` maps: FIRE→spray, WATER→beam, EARTH→burst, NEUTRAL→spray.
+
+### Base targeting (`src/game/commands.ts`, `src/game/rules.ts`, `src/game/ui.ts`, `src/game/ai.ts`)
+
+- `attackTarget` command now accepts `targetBase?: Owner` (mutually exclusive with `targetUid`).
+- `playCard` command accepts `targetBase?: Owner` for spells targeting a base.
+- Validation: `targetBase` must be the opponent's base; cannot target own base.
+- UI shows an "⚔ Enemy Base" button in the enemy zone during targeting phases.
+- Player base HP shown in both player and enemy zones for reference.
+- AI falls back to `targetBase: 'player'` when no unit targets are available.
+
+### Footprint helpers (`src/game/footprint.ts`)
+
+- Centralises all radius constants and footprint geometry.
+- `getUnitFootprint(unit)` → `{ cx, cy, radius: 5 }` or `null` if no sim position.
+- `getBaseFootprint(base)` → `{ cx, cy, radius: 5 }`.
+- `countParticlesInFootprint(sim, fp, types)` — used by `simDamage.ts`.
+- `CORE_RADIUS = 3` — tighter radius for per-CORE-cell erosion checks.
+
+### Expanded simDamage (`src/game/simDamage.ts`)
+
+- Uses footprint helpers exclusively — no scattered radius constants.
+- FIRE/SPARK damage: FIRE element (40%), WATER resists (8%), EARTH partial resist (20%).
+- SAND damage: chips at non-EARTH units (10%); EARTH units shrug it off (4%).
+- CORE erosion and `syncBaseHp` unchanged from Phase 3.
+
+### Command validation additions (`src/game/commands.ts`)
+
+- Generator placement validated for side (same half-field rule as creatures).
+- `attackTarget` must have exactly one of `targetUid` / `targetBase`.
+- `targetBase` must be opponent's base — own base attacks rejected with reason.
+- Rejected placement commands no longer clear the placement UI (fix in `ui.ts`).
+
+---
+
+### Current limitations (Phase 4)
+
+- **No creature movement.** Creatures stay at placed position. TODO: per-tick deterministic drift.
+- **No WALL particle.** Card-placed structures deferred to Phase 5.
+- **No replay file.** Command log is in-memory only.
+- **No networking.** Hotseat only.
+- **CORE erosion rate is conservative.** Tuning may be needed after creature movement is added.
+
+---
+
 ### Next recommended phase
 
-**Phase 4: Creature movement & sim-authority attacks**
+**Phase 5: Creature movement & replay**
 
-1. Each creature walks toward the enemy base each tick (deterministic step logic).
-2. `attackTarget` spawns element particles toward the target's sim position instead of directly subtracting HP.
-3. Add a `WALL` particle type for card-placed structures.
-4. Write `getCommandLog()` to `localStorage` on game end; add a `?replay=` loader.
+1. Add per-tick deterministic creature drift toward the enemy base (simX/simY updated each tick).
+2. Add a `WALL` particle type for card-placed structures that block projectiles.
+3. Write `getCommandLog()` to `localStorage` on game end; add a `?replay=` loader.

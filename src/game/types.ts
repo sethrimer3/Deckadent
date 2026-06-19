@@ -8,6 +8,24 @@ export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
 export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature';
+export type EffectKind = 'beam' | 'spray' | 'burst';
+
+// ---------------------------------------------------------------------------
+// CombatEffect — serializable, authoritative record of a pending sim event.
+// Enqueued by rules.ts; resolved tick-by-tick in combatEffects.ts.
+// Positions are captured at enqueue time so effects are deterministic even
+// if the source or target moves or dies during resolution.
+// ---------------------------------------------------------------------------
+export interface CombatEffect {
+  id: string;
+  owner: Owner;
+  element: ElementType;
+  effectKind: EffectKind;
+  sourcePos: { x: number; y: number };
+  targetPos: { x: number; y: number };
+  startTick: number;
+  durationTicks: number;
+}
 
 // ---------------------------------------------------------------------------
 // Simulation state — fully serializable, owns the particle grid and sim PRNG.
@@ -112,4 +130,6 @@ export interface GameState {
   prng: PRNGState;
   /** Full simulation state. GameState owns this; it is part of authoritative state. */
   sim: SimState;
+  /** Active combat effects being resolved into the sim each tick. Authoritative. */
+  combatEffects: CombatEffect[];
 }

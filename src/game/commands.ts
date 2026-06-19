@@ -15,6 +15,7 @@ export type Command =
       owner: Owner;
       cardUid: string;
       targetUid?: string;
+      targetBase?: Owner;   // spell targeting a base (mutually exclusive with targetUid)
       placement?: { x: number; y: number };
     }
   | {
@@ -22,7 +23,8 @@ export type Command =
       tick: number;
       owner: Owner;
       attackerUid: string;
-      targetUid: string;
+      targetUid?: string;   // unit target (mutually exclusive with targetBase)
+      targetBase?: Owner;   // base target (mutually exclusive with targetUid)
     }
   | {
       kind: 'endTurn';
@@ -54,11 +56,15 @@ export function clearCommandLog(): void { _commandLog.length = 0; _rejectedLog.l
 /** Commands that require cmd.owner to match the active turn player. */
 const TURN_SENSITIVE: Command['kind'][] = ['playCard', 'attackTarget', 'endTurn'];
 
+/** The opponent of a given owner. */
+function opponent(o: Owner): Owner { return o === 'player' ? 'enemy' : 'player'; }
+
 function validate(gs: GameState, cmd: Command): string | null {
   if (gs.status !== 'playing') return 'game is over';
   if (TURN_SENSITIVE.includes(cmd.kind) && cmd.owner !== gs.turn) {
     return `not ${cmd.owner}'s turn (active: ${gs.turn})`;
   }
+
   if (cmd.kind === 'playCard' && cmd.placement) {
     const { x, y } = cmd.placement;
     if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) {
@@ -68,13 +74,33 @@ function validate(gs: GameState, cmd: Command): string | null {
     const card = ps.hand.find(c => c.uid === cmd.cardUid);
     if (card) {
       const def = CARD_DEFS[card.defId];
+      const halfY = SIM_H / 2;
       if (def.type === 'CREATURE') {
-        const halfY = SIM_H / 2;
         if (cmd.owner === 'player' && y < halfY) return `player creature must be placed in lower half (y >= ${halfY})`;
         if (cmd.owner === 'enemy'  && y >= halfY) return `enemy creature must be placed in upper half (y < ${halfY})`;
       }
+      if (def.type === 'GENERATOR') {
+        if (cmd.owner === 'player' && y < halfY) return `player generator must be placed in lower half (y >= ${halfY})`;
+        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy generator must be placed in upper half (y < ${halfY})`;
+      }
     }
   }
+
+  if (cmd.kind === 'playCard' && cmd.targetBase !== undefined) {
+    // Spells may only target the opponent's base.
+    if (cmd.targetBase !== opponent(cmd.owner)) {
+      return `cannot target own base with a spell`;
+    }
+  }
+
+  if (cmd.kind === 'attackTarget') {
+    if (!cmd.targetUid && !cmd.targetBase) return 'attackTarget needs targetUid or targetBase';
+    if (cmd.targetUid && cmd.targetBase) return 'attackTarget cannot have both targetUid and targetBase';
+    if (cmd.targetBase !== undefined && cmd.targetBase !== opponent(cmd.owner)) {
+      return `cannot attack own base`;
+    }
+  }
+
   return null;
 }
 
@@ -94,10 +120,10 @@ export function applyCommand(gs: GameState, cmd: Command): boolean {
   let ok = false;
   switch (cmd.kind) {
     case 'playCard':
-      ok = playCard(gs, cmd.cardUid, cmd.targetUid, cmd.placement);
+      ok = playCard(gs, cmd.cardUid, cmd.targetUid, cmd.placement, cmd.targetBase);
       break;
     case 'attackTarget':
-      ok = attackTarget(gs, cmd.attackerUid, cmd.targetUid);
+      ok = attackTarget(gs, cmd.attackerUid, cmd.targetUid, cmd.targetBase);
       break;
     case 'endTurn':
       endTurn(gs);
