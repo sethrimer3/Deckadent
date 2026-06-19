@@ -1,5 +1,5 @@
 import { addParticle, simRand, SIM_W, SIM_H } from './sandSim';
-import type { GameState, Owner, UnitInstance } from './types';
+import type { GameState, SimState, Owner, UnitInstance } from './types';
 
 function calcSimPos(
   owner: Owner,
@@ -11,11 +11,9 @@ function calcSimPos(
   const spacing = Math.min(55, (SIM_W - 40) / count);
   const startX = SIM_W / 2 - (spacing * (count - 1)) / 2;
   const x = Math.round(startX + spacing * index);
-
   const y = owner === 'enemy'
     ? (zone === 'generator' ? 22 : 62)
     : (zone === 'creature' ? 118 : 158);
-
   return { x: Math.max(8, Math.min(SIM_W - 8, x)), y };
 }
 
@@ -39,7 +37,7 @@ export function getUnitSimPos(gs: GameState, uid: string): { x: number; y: numbe
   return { x: SIM_W / 2, y: SIM_H / 2 };
 }
 
-export function spawnWaterBeam(fx: number, fy: number, tx: number, ty: number): void {
+function spawnWaterBeam(sim: SimState, fx: number, fy: number, tx: number, ty: number): void {
   const dx = tx - fx, dy = ty - fy;
   const len = Math.sqrt(dx * dx + dy * dy);
   const steps = Math.ceil(len * 1.1);
@@ -47,36 +45,38 @@ export function spawnWaterBeam(fx: number, fy: number, tx: number, ty: number): 
     const t = i / steps;
     const x = Math.round(fx + dx * t);
     const y = Math.round(fy + dy * t);
-    addParticle(x, y, 'WATER');
-    if (simRand() < 0.4) addParticle(x + (simRand() < 0.5 ? 1 : -1), y, 'WATER');
+    addParticle(sim, x, y, 'WATER');
+    if (simRand(sim) < 0.4) addParticle(sim, x + (simRand(sim) < 0.5 ? 1 : -1), y, 'WATER');
   }
 }
 
-export function spawnFireSpray(fx: number, fy: number, tx: number, ty: number): void {
+function spawnFireSpray(sim: SimState, fx: number, fy: number, tx: number, ty: number): void {
   const dx = tx - fx, dy = ty - fy;
   const len = Math.sqrt(dx * dx + dy * dy);
   const steps = Math.ceil(len * 0.75);
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const x = Math.round(fx + dx * t + (simRand() - 0.5) * 7);
-    const y = Math.round(fy + dy * t + (simRand() - 0.5) * 7);
-    addParticle(x, y, simRand() < 0.5 ? 'SPARK' : 'FIRE');
+    const x = Math.round(fx + dx * t + (simRand(sim) - 0.5) * 7);
+    const y = Math.round(fy + dy * t + (simRand(sim) - 0.5) * 7);
+    addParticle(sim, x, y, simRand(sim) < 0.5 ? 'SPARK' : 'FIRE');
   }
   for (let i = 0; i < 18; i++) {
     addParticle(
-      tx + Math.round((simRand() - 0.5) * 14),
-      ty + Math.round((simRand() - 0.5) * 14),
+      sim,
+      tx + Math.round((simRand(sim) - 0.5) * 14),
+      ty + Math.round((simRand(sim) - 0.5) * 14),
       'FIRE'
     );
   }
 }
 
-export function spawnSandBurst(fx: number, fy: number, tx: number, ty: number): void {
+function spawnSandBurst(sim: SimState, fx: number, fy: number, tx: number, ty: number): void {
   void fx; void fy;
   for (let i = 0; i < 45; i++) {
     addParticle(
-      tx + Math.round((simRand() - 0.5) * 26),
-      ty - 30 - Math.round(simRand() * 25),
+      sim,
+      tx + Math.round((simRand(sim) - 0.5) * 26),
+      ty - 30 - Math.round(simRand(sim) * 25),
       'SAND'
     );
   }
@@ -88,14 +88,15 @@ export function triggerEffect(
   attackerUid: string | null,
   targetUid: string
 ): void {
+  const sim = gs.sim;
   const tPos = getUnitSimPos(gs, targetUid);
   const fPos = attackerUid
     ? getUnitSimPos(gs, attackerUid)
     : { x: SIM_W / 2, y: SIM_H / 2 };
 
   switch (effectKey) {
-    case 'water_beam': spawnWaterBeam(fPos.x, fPos.y, tPos.x, tPos.y); break;
-    case 'fire_spray': spawnFireSpray(fPos.x, fPos.y, tPos.x, tPos.y); break;
-    case 'sand_burst': spawnSandBurst(fPos.x, fPos.y, tPos.x, tPos.y); break;
+    case 'water_beam': spawnWaterBeam(sim, fPos.x, fPos.y, tPos.x, tPos.y); break;
+    case 'fire_spray': spawnFireSpray(sim, fPos.x, fPos.y, tPos.x, tPos.y); break;
+    case 'sand_burst': spawnSandBurst(sim, fPos.x, fPos.y, tPos.x, tPos.y); break;
   }
 }

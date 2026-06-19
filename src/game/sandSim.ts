@@ -1,222 +1,226 @@
 import { createPRNG, nextFloat, chance } from './prng';
-import type { PRNGState } from './prng';
+import type { SimState, SimParticle, ParticleType } from './types';
 
 export const SIM_W = 320;
 export const SIM_H = 180;
-
-export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK';
-
-interface Particle {
-  type: ParticleType;
-  lifetime: number;
-  moved: boolean;
-}
 
 const FIRE_MAX = 50;
 const SMOKE_MAX = 70;
 const SPARK_MAX = 35;
 
-const SIZE = SIM_W * SIM_H;
-let grid: Particle[] = [];
+// ---------------------------------------------------------------------------
+// Scratch buffer — per-tick "moved" flags. Not game state; purely algorithmic.
+// Allocated once and reused every updateSim call to avoid GC pressure.
+// ---------------------------------------------------------------------------
+let _movedScratch = new Uint8Array(SIM_W * SIM_H);
+
+function ensureScratch(size: number): Uint8Array {
+  if (_movedScratch.length < size) _movedScratch = new Uint8Array(size);
+  return _movedScratch;
+}
 
 // ---------------------------------------------------------------------------
-// Sim PRNG — seeded, deterministic, separate from the gameplay PRNG so the
-// two can advance independently. Not yet serialized alongside game state but
-// structured to support that: use getSimPRNGState/setSimPRNGState.
-// TODO (see DESIGN_GUIDELINES.md §Simulation Authority): when the sim grid
-// becomes authoritative state, serialize simPrng alongside the grid.
+// Public API
 // ---------------------------------------------------------------------------
-let simPrng: PRNGState = createPRNG(0);
 
-export function initSimPRNG(seed: number): void {
-  simPrng = createPRNG(seed);
+export function createSimState(seed: number): SimState {
+  const size = SIM_W * SIM_H;
+  const grid: SimParticle[] = Array.from({ length: size }, () => ({ type: 'EMPTY', lifetime: 0 }));
+  return { width: SIM_W, height: SIM_H, grid, prng: createPRNG(seed) };
 }
 
-export function getSimPRNGState(): Readonly<PRNGState> {
-  return simPrng;
-}
-
-export function setSimPRNGState(state: PRNGState): void {
-  simPrng = { ...state };
-}
-
-/** Returns a random float [0, 1) from the deterministic sim PRNG. */
-export function simRand(): number {
-  return nextFloat(simPrng);
-}
-
-function empty(): Particle {
-  return { type: 'EMPTY', lifetime: 0, moved: false };
-}
-
-export function initSim(): void {
-  grid = Array.from({ length: SIZE }, empty);
-}
-
-export function addParticle(x: number, y: number, type: ParticleType): void {
+export function addParticle(sim: SimState, x: number, y: number, type: ParticleType): void {
   const xi = Math.round(x);
   const yi = Math.round(y);
-  if (xi < 0 || xi >= SIM_W || yi < 0 || yi >= SIM_H) return;
-  const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(simPrng) * 20
-           : type === 'SMOKE' ? SMOKE_MAX + nextFloat(simPrng) * 20
-           : type === 'SPARK' ? SPARK_MAX + nextFloat(simPrng) * 15
+  if (xi < 0 || xi >= sim.width || yi < 0 || yi >= sim.height) return;
+  // CORE cells are placed directly by state init, not through addParticle
+  if (type === 'CORE') return;
+  const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(sim.prng) * 20
+           : type === 'SMOKE' ? SMOKE_MAX + nextFloat(sim.prng) * 20
+           : type === 'SPARK' ? SPARK_MAX + nextFloat(sim.prng) * 15
            : 0;
-  grid[yi * SIM_W + xi] = { type, lifetime: lt, moved: false };
+  sim.grid[yi * sim.width + xi] = { type, lifetime: lt };
 }
 
-function g(x: number, y: number): Particle {
-  if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) return { type: 'SAND', lifetime: 0, moved: false };
-  return grid[y * SIM_W + x];
+/** Convenience: random float from the sim PRNG. Used by effects.ts. */
+export function simRand(sim: SimState): number {
+  return nextFloat(sim.prng);
 }
 
-function moveTo(x: number, y: number, nx: number, ny: number): void {
-  const src = grid[y * SIM_W + x];
-  const dst = grid[ny * SIM_W + nx];
-  src.moved = true;
-  dst.moved = true;
-  grid[y * SIM_W + x] = dst;
-  grid[ny * SIM_W + nx] = src;
-  grid[ny * SIM_W + nx].moved = true;
-}
+export function updateSim(sim: SimState): void {
+  const size = sim.width * sim.height;
+  const moved = ensureScratch(size);
+  moved.fill(0);
 
-function isEmpty(x: number, y: number): boolean {
-  return g(x, y).type === 'EMPTY';
-}
-
-export function updateSim(): void {
-  for (let i = 0; i < SIZE; i++) grid[i].moved = false;
-
-  for (let y = SIM_H - 1; y >= 0; y--) {
+  for (let y = sim.height - 1; y >= 0; y--) {
     const ltr = (y & 1) === 0;
-    for (let xi = 0; xi < SIM_W; xi++) {
-      const x = ltr ? xi : SIM_W - 1 - xi;
-      const p = grid[y * SIM_W + x];
-      if (p.moved || p.type === 'EMPTY') continue;
+    for (let xi = 0; xi < sim.width; xi++) {
+      const x = ltr ? xi : sim.width - 1 - xi;
+      const i = y * sim.width + x;
+      if (moved[i]) continue;
+      const p = sim.grid[i];
+      // EMPTY and CORE are static — no step needed
+      if (p.type === 'EMPTY' || p.type === 'CORE') continue;
 
       switch (p.type) {
-        case 'SAND':  stepSand(x, y); break;
-        case 'WATER': stepWater(x, y); break;
-        case 'FIRE':  stepFire(x, y, p); break;
-        case 'SMOKE': stepSmoke(x, y, p); break;
-        case 'SPARK': stepSpark(x, y, p); break;
+        case 'SAND':  stepSand(sim, moved, x, y); break;
+        case 'WATER': stepWater(sim, moved, x, y); break;
+        case 'FIRE':  stepFire(sim, moved, x, y, p); break;
+        case 'SMOKE': stepSmoke(sim, moved, x, y, p); break;
+        case 'SPARK': stepSpark(sim, moved, x, y, p); break;
       }
     }
   }
 }
 
-function stepSand(x: number, y: number): void {
-  if (y + 1 >= SIM_H) return;
-  const below = g(x, y + 1).type;
-  if (below === 'EMPTY' || below === 'WATER') { moveTo(x, y, x, y + 1); return; }
-  const d = chance(simPrng, 0.5) ? 1 : -1;
-  if (x + d >= 0 && x + d < SIM_W && (g(x + d, y + 1).type === 'EMPTY' || g(x + d, y + 1).type === 'WATER')) {
-    moveTo(x, y, x + d, y + 1); return;
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function g(sim: SimState, x: number, y: number): SimParticle {
+  if (x < 0 || x >= sim.width || y < 0 || y >= sim.height)
+    return { type: 'SAND', lifetime: 0 }; // treat out-of-bounds as solid
+  return sim.grid[y * sim.width + x];
+}
+
+function isEmpty(sim: SimState, x: number, y: number): boolean {
+  const t = g(sim, x, y).type;
+  return t === 'EMPTY';
+}
+
+function moveTo(sim: SimState, moved: Uint8Array, x: number, y: number, nx: number, ny: number): void {
+  const si = y * sim.width + x;
+  const di = ny * sim.width + nx;
+  const src = sim.grid[si];
+  const dst = sim.grid[di];
+  sim.grid[si] = dst;
+  sim.grid[di] = src;
+  moved[si] = 1;
+  moved[di] = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Step functions
+// ---------------------------------------------------------------------------
+
+function stepSand(sim: SimState, moved: Uint8Array, x: number, y: number): void {
+  if (y + 1 >= sim.height) return;
+  const below = g(sim, x, y + 1).type;
+  if (below === 'EMPTY' || below === 'WATER') { moveTo(sim, moved, x, y, x, y + 1); return; }
+  const d = chance(sim.prng, 0.5) ? 1 : -1;
+  if (x + d >= 0 && x + d < sim.width) {
+    const bt = g(sim, x + d, y + 1).type;
+    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x + d, y + 1); return; }
   }
-  if (x - d >= 0 && x - d < SIM_W && (g(x - d, y + 1).type === 'EMPTY' || g(x - d, y + 1).type === 'WATER')) {
-    moveTo(x, y, x - d, y + 1);
+  if (x - d >= 0 && x - d < sim.width) {
+    const bt = g(sim, x - d, y + 1).type;
+    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x - d, y + 1); }
   }
 }
 
-function stepWater(x: number, y: number): void {
-  if (y + 1 < SIM_H && isEmpty(x, y + 1)) { moveTo(x, y, x, y + 1); return; }
+function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void {
+  if (y + 1 < sim.height && isEmpty(sim, x, y + 1)) { moveTo(sim, moved, x, y, x, y + 1); return; }
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && g(nx, ny).type === 'FIRE') {
-      grid[ny * SIM_W + nx] = { type: 'SMOKE', lifetime: 25, moved: true };
-      grid[y * SIM_W + x] = empty();
+    if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && g(sim, nx, ny).type === 'FIRE') {
+      sim.grid[ny * sim.width + nx] = { type: 'SMOKE', lifetime: 25 };
+      sim.grid[y * sim.width + x]   = { type: 'EMPTY', lifetime: 0 };
       return;
     }
   }
-  const d = chance(simPrng, 0.5) ? 1 : -1;
-  if (x + d >= 0 && x + d < SIM_W && isEmpty(x + d, y)) { moveTo(x, y, x + d, y); return; }
-  if (x - d >= 0 && x - d < SIM_W && isEmpty(x - d, y)) { moveTo(x, y, x - d, y); }
+  const d = chance(sim.prng, 0.5) ? 1 : -1;
+  if (x + d >= 0 && x + d < sim.width && isEmpty(sim, x + d, y)) { moveTo(sim, moved, x, y, x + d, y); return; }
+  if (x - d >= 0 && x - d < sim.width && isEmpty(sim, x - d, y)) { moveTo(sim, moved, x, y, x - d, y); }
 }
 
-function stepFire(x: number, y: number, p: Particle): void {
+function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
   if (p.lifetime <= 0) {
-    grid[y * SIM_W + x] = chance(simPrng, 0.35)
-      ? { type: 'SMOKE', lifetime: SMOKE_MAX, moved: true }
-      : empty();
+    sim.grid[y * sim.width + x] = chance(sim.prng, 0.35)
+      ? { type: 'SMOKE', lifetime: SMOKE_MAX }
+      : { type: 'EMPTY', lifetime: 0 };
     return;
   }
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, 1], [0, -1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && g(nx, ny).type === 'WATER') {
-      grid[y * SIM_W + x] = { type: 'SMOKE', lifetime: 20, moved: true };
-      grid[ny * SIM_W + nx] = empty();
+    if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && g(sim, nx, ny).type === 'WATER') {
+      sim.grid[y  * sim.width + x]  = { type: 'SMOKE', lifetime: 20 };
+      sim.grid[ny * sim.width + nx] = { type: 'EMPTY', lifetime: 0 };
       return;
     }
   }
-  if (y - 1 >= 0 && isEmpty(x, y - 1) && chance(simPrng, 0.25)) {
-    moveTo(x, y, x, y - 1); return;
+  if (y - 1 >= 0 && isEmpty(sim, x, y - 1) && chance(sim.prng, 0.25)) {
+    moveTo(sim, moved, x, y, x, y - 1); return;
   }
-  if (chance(simPrng, 0.06)) {
-    const dx = chance(simPrng, 0.5) ? 1 : -1;
+  if (chance(sim.prng, 0.06)) {
+    const dx = chance(sim.prng, 0.5) ? 1 : -1;
     const nx = x + dx;
-    if (nx >= 0 && nx < SIM_W && isEmpty(nx, y)) {
-      grid[y * SIM_W + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4), moved: true };
+    if (nx >= 0 && nx < sim.width && isEmpty(sim, nx, y)) {
+      sim.grid[y * sim.width + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4) };
     }
   }
 }
 
-function stepSmoke(x: number, y: number, p: Particle): void {
+function stepSmoke(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
-  if (p.lifetime <= 0) { grid[y * SIM_W + x] = empty(); return; }
-  if (y - 1 >= 0 && isEmpty(x, y - 1) && chance(simPrng, 0.35)) {
-    moveTo(x, y, x, y - 1); return;
+  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0 }; return; }
+  if (y - 1 >= 0 && isEmpty(sim, x, y - 1) && chance(sim.prng, 0.35)) {
+    moveTo(sim, moved, x, y, x, y - 1); return;
   }
-  const d = chance(simPrng, 0.5) ? 1 : -1;
-  if (x + d >= 0 && x + d < SIM_W && y - 1 >= 0 && isEmpty(x + d, y - 1) && chance(simPrng, 0.15)) {
-    moveTo(x, y, x + d, y - 1);
+  const d = chance(sim.prng, 0.5) ? 1 : -1;
+  if (x + d >= 0 && x + d < sim.width && y - 1 >= 0 && isEmpty(sim, x + d, y - 1) && chance(sim.prng, 0.15)) {
+    moveTo(sim, moved, x, y, x + d, y - 1);
   }
 }
 
-function stepSpark(x: number, y: number, p: Particle): void {
+function stepSpark(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
-  if (p.lifetime <= 0) { grid[y * SIM_W + x] = empty(); return; }
-  if (chance(simPrng, 0.08)) {
-    const nx = x + (chance(simPrng, 0.5) ? 1 : -1);
-    const ny = y + (chance(simPrng, 0.5) ? 1 : -1);
-    if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && isEmpty(nx, ny)) {
-      grid[ny * SIM_W + nx] = { type: 'FIRE', lifetime: FIRE_MAX, moved: true };
+  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0 }; return; }
+  if (chance(sim.prng, 0.08)) {
+    const nx = x + (chance(sim.prng, 0.5) ? 1 : -1);
+    const ny = y + (chance(sim.prng, 0.5) ? 1 : -1);
+    if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
+      sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX };
     }
   }
-  const dx = chance(simPrng, 0.5) ? 1 : -1;
-  const dy = chance(simPrng, 0.55) ? -1 : (chance(simPrng, 0.5) ? 1 : -1);
+  const dx = chance(sim.prng, 0.5) ? 1 : -1;
+  const dy = chance(sim.prng, 0.55) ? -1 : (chance(sim.prng, 0.5) ? 1 : -1);
   const nx = x + dx, ny = y + dy;
-  if (nx >= 0 && nx < SIM_W && ny >= 0 && ny < SIM_H && isEmpty(nx, ny)) {
-    moveTo(x, y, nx, ny);
+  if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
+    moveTo(sim, moved, x, y, nx, ny);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Rendering — reads SimState, must not mutate it. Math.random allowed here
+// for purely visual effects (fire flicker jitter) that do not affect game state.
+// ---------------------------------------------------------------------------
 
 const COLORS: Record<ParticleType, readonly [number, number, number]> = {
   EMPTY: [15, 10, 28],
   WATER: [40, 110, 230],
-  FIRE: [230, 70, 10],
-  SAND: [185, 158, 82],
+  FIRE:  [230, 70, 10],
+  SAND:  [185, 158, 82],
   SMOKE: [95, 95, 108],
   SPARK: [255, 220, 40],
+  CORE:  [0, 210, 160], // teal — physically significant base/core cells
 };
 
-export function renderSim(ctx: CanvasRenderingContext2D): void {
-  const img = ctx.createImageData(SIM_W, SIM_H);
+export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
+  const img = ctx.createImageData(sim.width, sim.height);
   const d = img.data;
+  const { grid } = sim;
 
-  for (let i = 0; i < SIZE; i++) {
+  for (let i = 0; i < grid.length; i++) {
     const p = grid[i];
     const pi = i * 4;
-    if (p.type === 'EMPTY') {
-      d[pi] = 15; d[pi + 1] = 10; d[pi + 2] = 28; d[pi + 3] = 255;
-    } else {
-      const [r, g, b] = COLORS[p.type];
-      // VISUAL-ONLY: fire/spark flicker uses Math.random — not gameplay-affecting.
-      const jitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
-      d[pi]     = Math.min(255, r + jitter);
-      d[pi + 1] = Math.min(255, g + (p.type === 'FIRE' ? jitter * 0.5 : 0));
-      d[pi + 2] = b;
-      d[pi + 3] = 255;
-    }
+    const [r, g, b] = COLORS[p.type];
+    // VISUAL-ONLY: fire/spark flicker jitter uses Math.random — not gameplay-affecting.
+    const jitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
+    d[pi]     = Math.min(255, r + jitter);
+    d[pi + 1] = Math.min(255, g + (p.type === 'FIRE' ? jitter * 0.5 : 0));
+    d[pi + 2] = b;
+    d[pi + 3] = 255;
   }
 
   ctx.putImageData(img, 0, 0);

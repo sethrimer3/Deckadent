@@ -1,21 +1,28 @@
 import { CARD_DEFS } from './cards';
 import { SIM_H, SIM_W } from './sandSim';
-import type { GameState, UnitInstance } from './types';
+import type { GameState, UnitInstance, BaseInstance, Owner } from './types';
+
+// ─── Shared colours ───────────────────────────────────────────────────────────
+
+const GOLD       = '#ffd740';
+const ROCK       = '#786c6a';
+const ROCK_DARK  = '#4f484b';
+const GRASS      = '#3ba65f';
+const LEAF       = '#2f8c4c';
+const DIRT       = '#8a5a32';
+const GLASS      = '#98e6ff';
+const GLASS_DARK = '#376477';
+const LIGHT      = '#d8ffff';
+const BUILDING   = '#d5c69a';
+const FIRE_CORE  = '#ff8b2f';
+const WATER_CORE = '#5ec8ff';
+
+// Base/fortress colours
+const FORT_WALL  = '#8c7865';
+const FORT_DARK  = '#5a4e40';
+const FORT_INNER = '#3a3040';
 
 type Pixel = { dx: number; dy: number; color: string };
-
-const GOLD = '#ffd740';
-const ROCK = '#786c6a';
-const ROCK_DARK = '#4f484b';
-const GRASS = '#3ba65f';
-const LEAF = '#2f8c4c';
-const DIRT = '#8a5a32';
-const GLASS = '#98e6ff';
-const GLASS_DARK = '#376477';
-const LIGHT = '#d8ffff';
-const BUILDING = '#d5c69a';
-const FIRE_CORE = '#ff8b2f';
-const WATER_CORE = '#5ec8ff';
 
 function setPixel(pixels: Pixel[], dx: number, dy: number, color: string): void {
   pixels.push({ dx, dy, color });
@@ -34,6 +41,8 @@ function addGoldOutline(pixels: Pixel[]): Pixel[] {
   }
   return [...outline.values(), ...pixels];
 }
+
+// ─── Generator pixel art ──────────────────────────────────────────────────────
 
 function mountainPixels(coreColor: string): Pixel[] {
   const pixels: Pixel[] = [];
@@ -61,11 +70,11 @@ function islandPixels(coreColor: string): Pixel[] {
     for (let x = -half; x <= half; x++) setPixel(pixels, x, y, ROCK_DARK);
   }
   for (const tx of [-6, 5]) {
-    setPixel(pixels, tx, -5, LEAF);
+    setPixel(pixels, tx,     -5, LEAF);
     setPixel(pixels, tx - 1, -4, LEAF);
-    setPixel(pixels, tx, -4, LEAF);
+    setPixel(pixels, tx,     -4, LEAF);
     setPixel(pixels, tx + 1, -4, LEAF);
-    setPixel(pixels, tx, -3, DIRT);
+    setPixel(pixels, tx,     -3, DIRT);
   }
   setPixel(pixels, 0, 1, coreColor);
   setPixel(pixels, 1, 1, coreColor);
@@ -101,7 +110,12 @@ function pixelsForGenerator(unit: UnitInstance): Pixel[] {
   return unit.hp > 0 ? addGoldOutline(base) : base;
 }
 
-function drawGenerator(ctx: CanvasRenderingContext2D, unit: UnitInstance, fallbackX: number, fallbackY: number): void {
+function drawGenerator(
+  ctx: CanvasRenderingContext2D,
+  unit: UnitInstance,
+  fallbackX: number,
+  fallbackY: number,
+): void {
   const cx = Math.round(unit.simX ?? fallbackX);
   const cy = Math.round(unit.simY ?? fallbackY);
   const pixels = pixelsForGenerator(unit);
@@ -117,4 +131,68 @@ function drawGenerator(ctx: CanvasRenderingContext2D, unit: UnitInstance, fallba
 export function renderGeneratorStructures(ctx: CanvasRenderingContext2D, gs: GameState): void {
   gs.enemy.generators.forEach((unit, index) => drawGenerator(ctx, unit, 222 + index * 34, 32));
   gs.player.generators.forEach((unit, index) => drawGenerator(ctx, unit, 62 + index * 34, 148));
+}
+
+// ─── Base / core fortress renderer ───────────────────────────────────────────
+//
+// Each player's base is drawn as a pixelated fortress outline centered on
+// base.simX/simY. The interior is left undrawn so that CORE cells rendered
+// by renderSim (teal) are visible through the walls.
+// An HP bar is drawn just outside the fortress facing the battlefield.
+
+function drawBaseStructure(ctx: CanvasRenderingContext2D, base: BaseInstance): void {
+  const { simX, simY, owner, hp, maxHp } = base;
+  const HW = 14; // half-width in sim pixels
+  const HH = 8;  // half-height in sim pixels
+
+  const x0 = simX - HW;
+  const y0 = simY - HH;
+  const x1 = simX + HW;
+  const y1 = simY + HH;
+
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) continue;
+      const onBorder = x === x0 || x === x1 || y === y0 || y === y1;
+      if (!onBorder) continue; // leave interior transparent — core cells show through
+
+      // Battlements on the battlefield-facing edge
+      const outerEdge = owner === 'player' ? y === y0 : y === y1;
+      if (outerEdge && ((x - x0) % 4) < 2) continue; // alternating gaps
+
+      const color = (x + y) % 9 < 2 ? FORT_DARK : FORT_WALL;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+
+  // Gold accent corners
+  for (const [cx, cy] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as [number, number][]) {
+    if (cx >= 0 && cx < SIM_W && cy >= 0 && cy < SIM_H) {
+      ctx.fillStyle = GOLD;
+      ctx.fillRect(cx, cy, 1, 1);
+    }
+  }
+
+  // HP bar — drawn just outside the fortress on the battlefield-facing side
+  const hpPct = Math.max(0, hp / maxHp);
+  const barColor = hpPct > 0.5 ? '#3c9' : hpPct > 0.25 ? '#fa3' : '#e44';
+  const barY = owner === 'player' ? y0 - 3 : y1 + 2;
+  const barW = Math.round((HW * 2 + 1) * hpPct);
+  if (barY >= 0 && barY < SIM_H) {
+    if (barW > 0) {
+      ctx.fillStyle = barColor;
+      ctx.fillRect(x0, barY, barW, 2);
+    }
+    if (barW < HW * 2 + 1) {
+      ctx.fillStyle = '#1a1520';
+      ctx.fillRect(x0 + barW, barY, (HW * 2 + 1) - barW, 2);
+    }
+  }
+}
+
+/** Render base/core fortress structures for both players over the sim canvas. */
+export function renderBaseStructures(ctx: CanvasRenderingContext2D, gs: GameState): void {
+  drawBaseStructure(ctx, gs.player.base);
+  drawBaseStructure(ctx, gs.enemy.base);
 }

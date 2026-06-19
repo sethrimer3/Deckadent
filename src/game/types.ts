@@ -2,12 +2,36 @@ import type { PRNGState } from './prng';
 
 export type { PRNGState };
 
-export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK';
+export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE';
 export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL';
 export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
 export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator';
+
+// ---------------------------------------------------------------------------
+// Simulation state — fully serializable, owns the particle grid and sim PRNG.
+// ---------------------------------------------------------------------------
+
+export interface SimParticle {
+  type: ParticleType;
+  lifetime: number;
+  // `moved` is intentionally absent — it is a per-tick scratch value held in
+  // a module-level Uint8Array in sandSim.ts and is never serialized.
+}
+
+export interface SimState {
+  width: number;
+  height: number;
+  /** Flat row-major particle grid: index = y * width + x. JSON-serializable. */
+  grid: SimParticle[];
+  /** Deterministic PRNG for all particle physics. Serialized alongside grid. */
+  prng: PRNGState;
+}
+
+// ---------------------------------------------------------------------------
+// Card definitions
+// ---------------------------------------------------------------------------
 
 export interface CardDef {
   id: string;
@@ -27,6 +51,10 @@ export interface CardInstance {
   defId: string;
 }
 
+// ---------------------------------------------------------------------------
+// Units, bases, players
+// ---------------------------------------------------------------------------
+
 export interface UnitInstance {
   uid: string;
   defId: string;
@@ -39,19 +67,12 @@ export interface UnitInstance {
   simY?: number;
 }
 
-// ---------------------------------------------------------------------------
-// BaseInstance — physical structure on the battlefield.
-// TODO (see DESIGN_GUIDELINES.md §Physical Bases & Cores): bases should take
-// physical particle damage, block attacks, and losing the core should end the
-// game instead of the current generator-based win condition.
-// ---------------------------------------------------------------------------
 export interface BaseInstance {
   owner: Owner;
   hp: number;
   maxHp: number;
-  /** Simulation grid X coordinate of the base structure center. */
+  /** Center of this base/core structure in sim coordinates. */
   simX: number;
-  /** Simulation grid Y coordinate of the base structure center. */
   simY: number;
 }
 
@@ -62,9 +83,13 @@ export interface PlayerState {
   generators: UnitInstance[];
   creatures: UnitInstance[];
   energy: number;
-  /** Physical base entity on the battlefield. Not yet used for win/loss — see TODO above. */
+  /** Physical base/core entity on the battlefield. */
   base: BaseInstance;
 }
+
+// ---------------------------------------------------------------------------
+// GameState — the complete authoritative serializable game state.
+// ---------------------------------------------------------------------------
 
 export interface GameState {
   player: PlayerState;
@@ -78,8 +103,12 @@ export interface GameState {
   combatLog: string[];
   status: GameStatus;
   aiActing: boolean;
-  /** Authoritative simulation tick counter. Increments once per fixed sim step. */
+  /** Authoritative tick counter. Increments once per fixed sim step. */
   tick: number;
-  /** Seeded PRNG for all gameplay-affecting randomness. Serializable. */
+  /** Seed used to create this game — required for replay. */
+  initialSeed: number;
+  /** Gameplay PRNG: deck shuffles, draw order. Distinct stream from sim PRNG. */
   prng: PRNGState;
+  /** Full simulation state. GameState owns this; it is part of authoritative state. */
+  sim: SimState;
 }

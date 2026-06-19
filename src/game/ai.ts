@@ -1,119 +1,102 @@
 import type { GameState } from './types';
+import type { Command } from './commands';
 import { CARD_DEFS } from './cards';
-import { playCard, attackTarget, endTurn } from './rules';
+import { applyCommand } from './commands';
 
-type AIStep =
-  | { kind: 'play'; cardUid: string; targetUid?: string }
-  | { kind: 'attack'; attackerUid: string; targetUid: string }
-  | { kind: 'end' };
+// ---------------------------------------------------------------------------
+// AI command builder — computes the next single AI action as a Command.
+// Returns null when the AI has nothing left to do (all actions exhausted).
+// Using lazy computation rather than pre-planning so the command always
+// reflects fresh game state at the moment of execution.
+// ---------------------------------------------------------------------------
 
-function buildSteps(gs: GameState): AIStep[] {
-  const steps: AIStep[] = [];
+function computeNextAICommand(gs: GameState): Command | null {
   const eps = gs.enemy;
   const pps = gs.player;
 
-  let energy = eps.energy;
-  const used = new Set<string>();
-
-  // 1. Play generators if we have fewer than 2
+  // 1. Play a generator if below 2 and can afford it
   if (eps.generators.length < 2) {
     for (const card of eps.hand) {
-      if (used.has(card.uid)) continue;
       const def = CARD_DEFS[card.defId];
-      if (def.type === 'GENERATOR' && def.cost <= energy) {
-        steps.push({ kind: 'play', cardUid: card.uid });
-        energy -= def.cost;
-        used.add(card.uid);
-        break;
+      if (def.type === 'GENERATOR' && def.cost <= eps.energy) {
+        // Pick a deterministic placement based on current generator count
+        const idx = eps.generators.length;
+        const placement = { x: 100 + idx * 50, y: 32 };
+        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement };
       }
     }
   }
 
   // 2. Play creatures
   for (const card of eps.hand) {
-    if (used.has(card.uid)) continue;
     const def = CARD_DEFS[card.defId];
-    if (def.type === 'CREATURE' && def.cost <= energy) {
-      steps.push({ kind: 'play', cardUid: card.uid });
-      energy -= def.cost;
-      used.add(card.uid);
+    if (def.type === 'CREATURE' && def.cost <= eps.energy) {
+      return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid };
     }
   }
 
-  // 3. Cast spells at player creatures (prefer) else generators
+  // 3. Cast spells
   for (const card of eps.hand) {
-    if (used.has(card.uid)) continue;
     const def = CARD_DEFS[card.defId];
-    if (def.type === 'SPELL' && def.cost <= energy) {
+    if (def.type === 'SPELL' && def.cost <= eps.energy) {
       const target = pps.creatures[0] ?? pps.generators[0];
       if (target) {
-        steps.push({ kind: 'play', cardUid: card.uid, targetUid: target.uid });
-        energy -= def.cost;
-        used.add(card.uid);
+        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, targetUid: target.uid };
       }
     }
   }
 
-  // 4. Attack with all ready creatures
+  // 4. Attack with each ready creature (one attack per call — called repeatedly)
   for (const creature of eps.creatures) {
     if (creature.hasAttacked) continue;
     const target = pps.creatures[0] ?? pps.generators[0];
     if (target) {
-      steps.push({ kind: 'attack', attackerUid: creature.uid, targetUid: target.uid });
+      return { kind: 'attackTarget', tick: gs.tick, owner: 'enemy', attackerUid: creature.uid, targetUid: target.uid };
     }
   }
 
-  steps.push({ kind: 'end' });
-  return steps;
+  // 5. No more actions — end turn
+  return { kind: 'endTurn', tick: gs.tick, owner: 'enemy' };
 }
 
+// ---------------------------------------------------------------------------
+// runEnemyTurn — drives the AI turn with visual timing delays.
+// Timing delays are purely presentational; they do not affect command contents
+// or simulation results. Each step re-queries state so targets are always fresh.
+// ---------------------------------------------------------------------------
 export function runEnemyTurn(
   gs: GameState,
   renderFn: () => void,
   onDone: () => void
 ): void {
   gs.aiActing = true;
-  const steps = buildSteps(gs);
 
-  function executeNext(i: number): void {
-    if (i >= steps.length || gs.status !== 'playing') {
+  function step(): void {
+    if (gs.status !== 'playing') {
       gs.aiActing = false;
       onDone();
       return;
     }
-    const step = steps[i];
 
-    if (step.kind === 'play') {
-      // Re-resolve spell target in case earlier actions changed the board
-      if (step.targetUid) {
-        const pps = gs.player;
-        const freshTarget = pps.creatures[0] ?? pps.generators[0];
-        step.targetUid = freshTarget?.uid;
-      }
-      if (!step.targetUid && CARD_DEFS[gs.enemy.hand.find(c => c.uid === step.cardUid)?.defId ?? '']?.type === 'SPELL') {
-        // No valid target; skip
-        executeNext(i + 1);
-        return;
-      }
-      playCard(gs, step.cardUid, step.targetUid);
-    } else if (step.kind === 'attack') {
-      // Re-resolve target
-      const pps = gs.player;
-      const freshTarget = pps.creatures[0] ?? pps.generators[0];
-      if (freshTarget) {
-        attackTarget(gs, step.attackerUid, freshTarget.uid);
-      }
-    } else {
-      endTurn(gs);
+    const cmd = computeNextAICommand(gs);
+    if (!cmd) {
       gs.aiActing = false;
-      renderFn();
       onDone();
       return;
     }
 
+    applyCommand(gs, cmd);
     renderFn();
-    setTimeout(() => executeNext(i + 1), 700);
+
+    if (cmd.kind === 'endTurn') {
+      gs.aiActing = false;
+      onDone();
+      return;
+    }
+
+    // Visual delay between AI actions — does not affect determinism.
+    setTimeout(step, 700);
   }
 
-  setTimeout(() => executeNext(0), 400);
+  setTimeout(step, 400);
 }
