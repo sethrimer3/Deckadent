@@ -719,3 +719,101 @@ All values still use `gs.sim.prng` exclusively — no `Math.random` introduced.
 - **Structure cards not used by AI.** Enemy deck does not include structure cards.
 - **Single replay slot.** Only the latest completed game is stored in localStorage.
 - **UID counter is module-level.** (see Phase 5 limitation note)
+
+---
+
+---
+
+## Phase 8: Card Art System (completed)
+
+---
+
+### Overview
+
+`src/game/cardArt.ts` adds procedural canvas art to each hand card. Art is rendered into a
+`<div class="card-art-zone">` placeholder injected into the `handCard()` HTML template in
+`ui.ts`. The system is **purely visual** — no game state is read or written by `cardArt.ts`.
+
+---
+
+### Asset loading pipeline
+
+```
+renderUI(gs, appEl)
+  └─ sets innerHTML (rebuilds all hand cards)
+  └─ mountCardArtCanvases(appEl)
+       ├─ stopAllCardArtAnimations()   — cancel prior rAF loop
+       ├─ for each [data-card-art] zone:
+       │    create <canvas ART_W×ART_H>
+       │    getDrawFn(cardId)           — dispatch to per-card draw function
+       │    if animated → addAnimatedSlot(ctx, fn)
+       │    else        → fn(ctx, 0)    — one-time static draw
+       └─ start global rAF loop (one loop for all animated cards)
+```
+
+`renderUI` is only called on user events, not every sim tick, so the global rAF restarts
+only when the player interacts — animations are visually continuous because they key off
+`performance.now()`, not a reset timer.
+
+---
+
+### Card art manifest
+
+| Card ID       | Type      | Art style                              | Animated |
+|---------------|-----------|----------------------------------------|----------|
+| `emberling`   | CREATURE  | Pulsing fire blob with flame wisps     | Yes      |
+| `water_wisp`  | CREATURE  | Rippling water orb with shimmer        | Yes      |
+| `stone_mite`  | CREATURE  | Stone shell with glowing pulsing eyes  | Yes      |
+| `spark_core`  | GENERATOR | Rotating 6-pointed star with sparks    | Yes      |
+| `spring_core` | GENERATOR | Water drop with expanding ring ripples | Yes      |
+| `ignite`      | SPELL     | Radial fire-spark burst                | Yes      |
+| `splash`      | SPELL     | Expanding water rings + flying beads   | Yes      |
+| `collapse`    | SPELL     | Falling sand particles + ground pile   | Yes      |
+| `stone_wall`  | STRUCTURE | Brick-textured stone rectangle         | Static   |
+| `channel`     | STRUCTURE | Two stone rails with floor corridor    | Static   |
+| `firebreak`   | STRUCTURE | Alternating stone pillars              | Static   |
+
+A fallback (`?` glyph) renders for any unrecognised card ID.
+
+---
+
+### Swapping in real assets
+
+`getDrawFn(cardId)` in `cardArt.ts` is the single dispatch point. To replace a procedural
+placeholder with a real PNG or spritesheet:
+
+1. Load the image as an `HTMLImageElement` (preloading recommended).
+2. Return a `DrawFn` that calls `ctx.drawImage(img, 0, 0, ART_W, ART_H)`.
+3. For sprite-sheet animation, index frames using `Math.floor(t * fps) % frameCount`.
+
+No other files need to change.
+
+---
+
+### Determinism guarantee
+
+- `cardArt.ts` uses `performance.now()` (labeled `// VISUAL-ONLY`) exclusively for animation
+  timing.
+- No `GameState` fields are read or mutated.
+- Animations are excluded from `stateHash` and the replay system.
+- Replay verification is unaffected.
+
+---
+
+### Layout changes (Phase 8)
+
+- `--card-h` increased from `155px` to `185px` to accommodate the 44 px art zone.
+- `grid-template-rows` hand row increased from `170px` to `200px`.
+- `.card-art-zone` CSS block added (`height: 44px; flex-shrink: 0; overflow: hidden`).
+
+---
+
+### Current limitations (Phase 8)
+
+- **Procedural art only.** No external PNG or spritesheet assets are shipped. The manifest
+  is fully extensible but requires adding real assets to `getDrawFn`.
+- **Single global rAF for all animated cards.** Efficient, but all animations restart when
+  `renderUI` is called (on each player action). Visually seamless because timing is
+  `performance.now()`-relative, not session-relative.
+- **No art for enemy sidebar unit cards.** `unitCard()` in `ui.ts` does not currently include
+  a `data-card-art` zone — enemy/player sidebar units show text only.

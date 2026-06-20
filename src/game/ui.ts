@@ -4,6 +4,7 @@ import { canPlayCard } from './rules';
 import { applyCommand } from './commands';
 import { hashHex } from './stateHash';
 import { runEnemyTurn } from './ai';
+import { mountCardArtCanvases } from './cardArt';
 
 const ELEMENT_COLOR: Record<string, string> = {
   FIRE: '#e84a1a',
@@ -82,6 +83,7 @@ function handCard(card: CardInstance, gs: GameState): string {
     <div class="card-cost">${def.cost}</div>
     <div class="card-name">${def.name}</div>
     <div class="card-type-badge" style="background:${ELEMENT_COLOR[def.element]}">${def.element} · ${def.type}</div>
+    <div class="card-art-zone" data-card-art="${card.defId}"></div>
     <div class="card-stats">
       ${def.hp !== undefined ? `<span>HP ${def.hp}</span>` : ''}
       ${def.attack !== undefined && def.attack > 0 ? `<span>ATK ${def.attack}</span>` : ''}
@@ -227,6 +229,7 @@ ${status !== 'playing' ? `
   _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator' || gs.phase === 'placing-creature' || gs.phase === 'placing-structure');
 
   bindEvents(gs, appEl);
+  mountCardArtCanvases(appEl);
 }
 
 // ─── Event binding ────────────────────────────────────────────────────────────

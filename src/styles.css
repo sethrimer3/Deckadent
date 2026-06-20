@@ -13,7 +13,7 @@
   --earth:     #a07830;
   --neutral:   #888;
   --card-w:    110px;
-  --card-h:    155px;
+  --card-h:    185px;
   --radius:    6px;
 }
 
@@ -34,7 +34,7 @@ body {
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 .game-root {
   display: grid;
-  grid-template-rows: 30px minmax(0, 1fr) 170px 76px;
+  grid-template-rows: 30px minmax(0, 1fr) 200px 76px;
   height: 100vh;
   gap: 3px;
   padding: 3px;
@@ -282,6 +282,15 @@ body {
   font-size: 11px;
   color: #ccc;
 }
+.card-art-zone {
+  width: 100%;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #070510;
+}
+
 .card-rules {
   font-size: 10px;
   color: var(--text-dim);
