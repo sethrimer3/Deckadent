@@ -133,10 +133,16 @@ export function playCard(
     if (!placement) return false;
     if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
     const halfY = SIM_H / 2;
-    if (owner === 'player' && placement.y < halfY) return false;
+    if (owner === 'player' && placement.y < halfY) {
+      gs.combatLog.push('Generators must be placed in the lower half of the field.');
+      return false;
+    }
     if (owner === 'enemy'  && placement.y >= halfY) return false;
     const allUnitsG = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
-    if (overlapsExistingUnit(allUnitsG, placement.x, placement.y)) return false;
+    if (overlapsExistingUnit(allUnitsG, placement.x, placement.y)) {
+      if (owner === 'player') gs.combatLog.push('Cannot place generator — overlaps another unit.');
+      return false;
+    }
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
@@ -156,11 +162,17 @@ export function playCard(
   if (def.type === 'CREATURE') {
     if (!placement) return false;
     const halfY = SIM_H / 2;
-    if (owner === 'player' && placement.y < halfY) return false;
+    if (owner === 'player' && placement.y < halfY) {
+      gs.combatLog.push('Creatures must be placed in the lower half of the field.');
+      return false;
+    }
     if (owner === 'enemy'  && placement.y >= halfY) return false;
     if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
     const allUnitsC = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
-    if (overlapsExistingUnit(allUnitsC, placement.x, placement.y)) return false;
+    if (overlapsExistingUnit(allUnitsC, placement.x, placement.y)) {
+      if (owner === 'player') gs.combatLog.push('Cannot place creature — overlaps another unit.');
+      return false;
+    }
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
@@ -227,8 +239,11 @@ export function playCard(
     const shape = def.structureShape ?? 'wall_line';
     const radius = structureRadius(shape);
 
-    // Reject if the footprint contains CORE cells or is fully out of bounds.
-    if (!canPlaceStructure(gs.sim, x, y, radius)) return false;
+    // Reject if the footprint contains CORE cells or is out of bounds.
+    if (!canPlaceStructure(gs.sim, x, y, radius)) {
+      if (owner === 'player') gs.combatLog.push(`Cannot place ${def.name} — overlaps a core cell or out of bounds.`);
+      return false;
+    }
 
     // All checks passed — write WALL cells and consume card.
     ps.energy -= def.cost;

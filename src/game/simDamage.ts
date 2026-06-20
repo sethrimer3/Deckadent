@@ -19,13 +19,13 @@ import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RAD
 // through this resolver after particles contact unit footprints.
 // ---------------------------------------------------------------------------
 
-const FIRE_DAMAGE_PROB        = 0.40;
+const FIRE_DAMAGE_PROB        = 0.55;  // was 0.40 — more aggressive fire damage
 const WATER_FIRE_RESIST_PROB  = 0.08;  // WATER element resists fire
 const EARTH_FIRE_RESIST_PROB  = 0.20;  // EARTH element is stonier, partial resist
-const SAND_DAMAGE_PROB        = 0.10;  // sand chips away at non-earth units
+const SAND_DAMAGE_PROB        = 0.12;  // sand chips away at non-earth units
 const EARTH_SAND_DAMAGE_PROB  = 0.04;  // earth units shrug off most sand
-const CORE_FIRE_REMOVE_PROB   = 0.04;
-const WALL_FIRE_REMOVE_PROB   = 0.02;  // WALL erodes under fire, but slower than CORE
+const CORE_FIRE_REMOVE_PROB   = 0.06;  // was 0.04 — cores erode somewhat faster
+const WALL_FIRE_REMOVE_PROB   = 0.03;  // was 0.02 — walls erode faster under fire
 
 // Per-uid log cooldown — throttle to one entry every ~3 seconds.
 const LOG_COOLDOWN_TICKS = 90;

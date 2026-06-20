@@ -135,6 +135,12 @@ export function applyCommand(gs: GameState, cmd: Command, opts: ApplyOptions = {
   const err = validate(gs, cmd, skipTickCheck);
   if (err !== null) {
     _rejectedLog.push({ cmd, reason: err });
+    // Surface placement-specific rejections to the combat log so the player
+    // sees readable feedback when a placement is blocked by validation rules.
+    if (cmd.kind === 'playCard' && cmd.placement) {
+      const prefix = cmd.owner === 'player' ? 'Cannot place' : '[AI] Cannot place';
+      gs.combatLog.push(`${prefix}: ${err}.`);
+    }
     return false;
   }
 

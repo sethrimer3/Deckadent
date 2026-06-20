@@ -16,7 +16,7 @@ import { newEffectId } from './state';
 //   burst — 6  ticks: heavy sand drop above target, tapering
 // ---------------------------------------------------------------------------
 
-const DURATION: Record<EffectKind, number> = { beam: 10, spray: 8, burst: 6 };
+const DURATION: Record<EffectKind, number> = { beam: 14, spray: 12, burst: 8 };
 
 export function elementToEffectKind(element: ElementType): EffectKind {
   switch (element) {
@@ -53,35 +53,37 @@ export function enqueueEffect(
 function spawnBeamTick(gs: GameState, sx: number, sy: number, tx: number, ty: number): void {
   const sim = gs.sim;
   const dx = tx - sx, dy = ty - sy;
-  // Spawn 3 water particles at random points along the beam line this tick.
-  for (let k = 0; k < 3; k++) {
+  // 5 water particles along the beam line per tick (was 3).
+  for (let k = 0; k < 5; k++) {
     const t = simRand(sim);
     addParticle(sim, Math.round(sx + dx * t), Math.round(sy + dy * t), 'WATER');
   }
-  // Splash at target: extra water near the target point.
+  // Double splash at target for better particle concentration.
   addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 4), ty + Math.round((simRand(sim) - 0.5) * 4), 'WATER');
+  addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 3), ty + Math.round((simRand(sim) - 0.5) * 3), 'WATER');
 }
 
 function spawnSprayTick(gs: GameState, sx: number, sy: number, tx: number, ty: number): void {
   const sim = gs.sim;
   const dx = tx - sx, dy = ty - sy;
-  // 4 fire/spark particles scattered toward target this tick.
-  for (let k = 0; k < 4; k++) {
+  // 6 fire/spark particles scattered toward target per tick (was 4).
+  for (let k = 0; k < 6; k++) {
     const t = simRand(sim) * 0.85 + 0.1;
     const x = Math.round(sx + dx * t + (simRand(sim) - 0.5) * 9);
     const y = Math.round(sy + dy * t + (simRand(sim) - 0.5) * 9);
     addParticle(sim, x, y, simRand(sim) < 0.55 ? 'FIRE' : 'SPARK');
   }
-  // Concentrated burst at target on every other tick.
-  if (simRand(sim) < 0.6) {
+  // Concentrated burst at target — higher probability and double hit (was single at 60%).
+  if (simRand(sim) < 0.8) {
     addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 6), ty + Math.round((simRand(sim) - 0.5) * 6), 'FIRE');
+    addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 4), ty + Math.round((simRand(sim) - 0.5) * 4), 'SPARK');
   }
 }
 
 function spawnBurstTick(gs: GameState, tx: number, ty: number, ticksRemaining: number): void {
   const sim = gs.sim;
-  // Heavy initial drop, tapering toward end.
-  const count = ticksRemaining >= 4 ? 8 : ticksRemaining >= 2 ? 5 : 2;
+  // Heavier initial drop, tapering toward end.
+  const count = ticksRemaining >= 6 ? 10 : ticksRemaining >= 4 ? 8 : ticksRemaining >= 2 ? 5 : 3;
   for (let k = 0; k < count; k++) {
     const x = tx + Math.round((simRand(sim) - 0.5) * 22);
     const y = ty - 18 - Math.round(simRand(sim) * 14);

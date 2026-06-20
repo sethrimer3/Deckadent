@@ -32,12 +32,12 @@ import { SIM_W, SIM_H } from './sandSim';
 
 /** Ticks between 1-pixel vertical steps for each creature type. */
 const MOVE_SPEED: Record<string, number> = {
-  emberling:   3,
-  water_wisp:  4,
-  stone_mite:  6,
+  emberling:   2,  // fast — rushes toward enemy base
+  water_wisp:  3,  // medium — glides steadily
+  stone_mite:  5,  // slow — heavy crawler
 };
 
-const MOVE_SPEED_DEFAULT = 5;
+const MOVE_SPEED_DEFAULT = 4;
 
 /** Minimum simY for player creatures (close to enemy base area). */
 const MOVE_Y_MIN = 4;

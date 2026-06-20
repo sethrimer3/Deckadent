@@ -3,6 +3,8 @@ import type { Command } from './commands';
 import { CARD_DEFS } from './cards';
 import { applyCommand } from './commands';
 import { canCreatureAttack } from './rules';
+import { overlapsExistingUnit } from './footprint';
+import { SIM_H } from './sandSim';
 
 // ---------------------------------------------------------------------------
 // AI command builder — computes the next single AI action as a Command.
@@ -15,27 +17,47 @@ function computeNextAICommand(gs: GameState): Command | null {
   const eps = gs.enemy;
   const pps = gs.player;
 
+  const allUnits = [
+    ...gs.player.generators, ...gs.player.creatures,
+    ...gs.enemy.generators,  ...gs.enemy.creatures,
+  ];
+
   // 1. Play a generator if below 2 and can afford it
   if (eps.generators.length < 2) {
     for (const card of eps.hand) {
       const def = CARD_DEFS[card.defId];
       if (def.type === 'GENERATOR' && def.cost <= eps.energy) {
-        // Pick a deterministic placement based on current generator count
         const idx = eps.generators.length;
-        const placement = { x: 100 + idx * 50, y: 32 };
-        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement };
+        // Try candidate positions, stepping right until a free spot is found.
+        let cx = 100 + idx * 50;
+        for (let tries = 0; tries < 10; tries++, cx += 15) {
+          if (!overlapsExistingUnit(allUnits, cx, 32)) break;
+        }
+        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement: { x: cx, y: 32 } };
       }
     }
   }
 
-  // 2. Play creatures — deterministic placement in the upper half of the battlefield.
+  // 2. Play creatures — scan a grid of candidate positions in the upper half.
+  //    Pre-check overlap so a rejected placement never causes a retry loop.
   for (const card of eps.hand) {
     const def = CARD_DEFS[card.defId];
     if (def.type === 'CREATURE' && def.cost <= eps.energy) {
-      const idx = eps.creatures.length;
-      // Spread across upper half: x in [60..260], y in [32..72]
-      const placement = { x: 60 + (idx % 5) * 40, y: 32 + Math.floor(idx / 5) * 20 };
-      return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement };
+      let placement: { x: number; y: number } | null = null;
+      outer: for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 5; col++) {
+          const cx = 60 + col * 40;
+          const cy = 32 + row * 20;
+          if (cy >= SIM_H / 2) break outer;
+          if (!overlapsExistingUnit(allUnits, cx, cy)) {
+            placement = { x: cx, y: cy };
+            break outer;
+          }
+        }
+      }
+      if (placement) {
+        return { kind: 'playCard', tick: gs.tick, owner: 'enemy', cardUid: card.uid, placement };
+      }
     }
   }
 
@@ -98,9 +120,20 @@ export function runEnemyTurn(
   onDone: () => void
 ): void {
   gs.aiActing = true;
+  let steps = 0;
 
   function step(): void {
     if (gs.status !== 'playing') {
+      gs.aiActing = false;
+      onDone();
+      return;
+    }
+
+    // Safety guard: if the AI somehow loops (e.g. repeated rejected commands),
+    // force an end turn rather than hanging the game indefinitely.
+    if (++steps > 40) {
+      gs.combatLog.push('[AI] Safety guard triggered — ending turn.');
+      applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: 'enemy' });
       gs.aiActing = false;
       onDone();
       return;
@@ -113,8 +146,18 @@ export function runEnemyTurn(
       return;
     }
 
-    applyCommand(gs, cmd);
+    const applied = applyCommand(gs, cmd);
     renderFn();
+
+    // If a command was rejected unexpectedly (should be rare after AI pre-validation),
+    // log it for debugging and force end turn to avoid getting stuck.
+    if (!applied && cmd.kind !== 'endTurn') {
+      gs.combatLog.push(`[AI] Command rejected (${cmd.kind}) — ending turn.`);
+      applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: 'enemy' });
+      gs.aiActing = false;
+      onDone();
+      return;
+    }
 
     if (cmd.kind === 'endTurn') {
       gs.aiActing = false;

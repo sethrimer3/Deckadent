@@ -136,3 +136,39 @@ export function renderCreatureEntities(ctx: CanvasRenderingContext2D, gs: GameSt
     drawCreature(ctx, unit);
   }
 }
+
+/**
+ * Draw battlefield orientation labels and attacker selection indicator.
+ * Layered on top of everything else so labels are always readable.
+ */
+export function drawBattlefieldLabels(ctx: CanvasRenderingContext2D, gs: GameState): void {
+  ctx.save();
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  // Player base label below the fortress HP bar
+  const pb = gs.player.base;
+  ctx.fillStyle = '#4df';
+  ctx.fillText('PLAYER CORE', pb.simX, pb.simY + 14);
+
+  // Enemy base label above the fortress HP bar
+  const eb = gs.enemy.base;
+  ctx.fillStyle = '#f76';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('ENEMY CORE', eb.simX, eb.simY - 14);
+
+  // White selection ring around the selected attacker
+  if (gs.selectedAttackerUid) {
+    const attacker = gs.player.creatures.find(c => c.uid === gs.selectedAttackerUid);
+    if (attacker && attacker.simX !== undefined && attacker.simY !== undefined) {
+      const cx = Math.round(attacker.simX);
+      const cy = Math.round(attacker.simY);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx - 6, cy - 6, 12, 12);
+    }
+  }
+
+  ctx.restore();
+}

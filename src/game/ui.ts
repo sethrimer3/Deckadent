@@ -35,6 +35,20 @@ export function initUI(
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Look up the name of a card in the player's hand by its uid. */
+function pendingCardName(gs: GameState, uid: string | null): string {
+  if (!uid) return '';
+  const card = gs.player.hand.find(c => c.uid === uid);
+  return card ? (CARD_DEFS[card.defId]?.name ?? '') : '';
+}
+
+/** Look up the name of a player creature by its uid. */
+function attackerName(gs: GameState, uid: string | null): string {
+  if (!uid) return 'Creature';
+  const u = gs.player.creatures.find(c => c.uid === uid);
+  return u ? (CARD_DEFS[u.defId]?.name ?? 'Creature') : 'Creature';
+}
+
 function hpBar(hp: number, max: number): string {
   const pct = Math.max(0, hp / max) * 100;
   const color = pct > 50 ? '#3c9' : pct > 25 ? '#fa3' : '#e44';
@@ -122,15 +136,19 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
   if (turn === 'enemy' || gs.aiActing) {
     phaseMsg = `<div class="phase-msg enemy-turn">Enemy is acting…</div>`;
   } else if (phase === 'targeting-attack') {
-    phaseMsg = `<div class="phase-msg">Select an enemy creature or generator to attack — or click elsewhere to cancel.</div>`;
+    const aname = attackerName(gs, gs.selectedAttackerUid);
+    phaseMsg = `<div class="phase-msg"><b>${aname}</b> — click an enemy unit or the ⚔ Enemy Base button to attack. Click elsewhere to cancel.</div>`;
   } else if (phase === 'targeting-spell') {
-    phaseMsg = `<div class="phase-msg">Select a target for your spell — or click elsewhere to cancel.</div>`;
+    const sname = pendingCardName(gs, gs.pendingSpellCardUid);
+    phaseMsg = `<div class="phase-msg">Cast <b>${sname || 'Spell'}</b> — click a target unit or the ⚔ Enemy Base button. Click elsewhere to cancel.</div>`;
   } else if (phase === 'placing-generator') {
-    phaseMsg = `<div class="phase-msg">Click the simulation field to place your generator.</div>`;
+    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your generator. Generators produce energy each turn.</div>`;
   } else if (phase === 'placing-creature') {
-    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your creature.</div>`;
+    const cname = pendingCardName(gs, gs.pendingCreatureCardUid);
+    phaseMsg = `<div class="phase-msg">Place <b>${cname || 'Creature'}</b> in the <b>lower half</b>. It will advance toward the enemy base each tick.</div>`;
   } else if (phase === 'placing-structure') {
-    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your structure.</div>`;
+    const stname = pendingCardName(gs, gs.pendingStructureCardUid);
+    phaseMsg = `<div class="phase-msg">Place <b>${stname || 'Structure'}</b> in the <b>lower half</b>. Must not overlap the core. Click to place stone wall cells.</div>`;
   }
 
   const endTurnBtn = turn === 'player' && !gs.aiActing

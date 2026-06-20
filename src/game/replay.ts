@@ -14,7 +14,7 @@ import { hashHex } from './stateHash';
 // v2 adds finalTick so verifyReplay can advance to the exact saved tick before
 // comparing hashes. Records missing finalTick (v1) are rejected with a warning.
 // ---------------------------------------------------------------------------
-const REPLAY_VERSION = 'deckadent-replay-v2';
+const REPLAY_VERSION = 'deckadent-replay-v3';
 const STORAGE_KEY    = 'deckadent-latest-replay';
 
 export interface ReplayRecord {
@@ -75,7 +75,7 @@ export function loadLatestReplay(): ReplayRecord | null {
     if (rec.version !== REPLAY_VERSION) {
       console.warn(
         `[Replay] Version mismatch: got "${rec.version}", expected "${REPLAY_VERSION}". ` +
-        `Play a new game to generate a v2 replay record.`
+        `Play a new game to generate a v3 replay record.`
       );
       return null;
     }

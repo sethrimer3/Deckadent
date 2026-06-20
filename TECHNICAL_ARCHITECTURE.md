@@ -598,3 +598,124 @@ Structure placement is **fully command-authoritative** — captured in the comma
 - **No inter-team collision at walls.** Creatures pass through WALL cells visually; wall interaction is particle-only. Softbody collision with structures is a future sim feature.
 - **Single replay slot.** Only the latest game is stored.
 - **UID counter is module-level.** (see Phase 5 limitation note)
+
+---
+
+---
+
+## Phase 7: Playability Pass (completed)
+
+---
+
+### Card readability
+
+All `rulesText` values were rewritten to describe **physical simulation behavior** rather than abstract stat changes. Language like "Deal 2 damage" was replaced with descriptions of what actually happens in the sim:
+
+- Creatures describe their movement direction ("Advances toward enemy base each tick").
+- Spells describe the particle event they create ("Fires a fire spray from your base toward target").
+- Generators clarify they are physical structures that can be damaged.
+- Structure cards state their footprint, physical behavior, and erosion conditions.
+
+---
+
+### Card targeting hints
+
+Phase messages now include the name of the selected card or creature and describe what action is expected:
+
+- `placing-creature` → "Place **Emberling** in the lower half. It will advance toward the enemy base each tick."
+- `targeting-attack` → "**Stone Mite** — click an enemy unit or the ⚔ Enemy Base button to attack."
+- `targeting-spell` → "Cast **Ignite** — click a target unit or the ⚔ Enemy Base button."
+- `placing-structure` → "Place **Stone Wall** in the lower half. Must not overlap the core."
+
+Helper functions `pendingCardName(gs, uid)` and `attackerName(gs, uid)` derive card/creature names from `GameState` without adding new state fields.
+
+---
+
+### Placement feedback
+
+When a placement is rejected, the reason now appears in the combat log:
+
+- `commands.ts`: when `validate()` rejects a `playCard` command with a placement field, the error string is pushed to `gs.combatLog` with a "Cannot place:" prefix.
+- `rules.ts`: the three placement paths (GENERATOR, CREATURE, STRUCTURE) each push a specific reason when they detect the failure condition internally (wrong side, overlap, CORE cell conflict).
+
+Only player-turn failures generate user-facing log entries. AI failures are prefixed with `[AI]` for debuggability. State is never mutated on rejection.
+
+---
+
+### AI behavior improvements
+
+- **Creature overlap pre-check**: `computeNextAICommand` now scans a grid of candidate positions for creatures, checking `overlapsExistingUnit` before building the command. If no valid slot is found, that card is skipped. This eliminates the infinite-retry loop that occurred when `idx`-based placement collided with an existing unit.
+- **Generator placement**: similarly tries candidate positions stepping +15 in X until a free slot is found.
+- **Safety guard**: `runEnemyTurn.step()` tracks a step counter. After 40 steps it forces `endTurn` and logs `[AI] Safety guard triggered — ending turn.` This is a backstop against any future regression, not normally reachable.
+- **Rejected-command guard**: if `applyCommand` returns false for a non-`endTurn` command, the AI logs the rejection and immediately ends its turn rather than looping.
+- **Structure cards excluded**: enemy deck remains unchanged (no structure cards). AI placement logic for structures is deferred.
+
+---
+
+### Pacing and movement
+
+Creature movement speeds were increased to produce visible battlefield action within the first 2–3 turns:
+
+| Creature    | Old (ticks/px) | New (ticks/px) |
+|-------------|----------------|----------------|
+| Emberling   | 3              | 2              |
+| Water Wisp  | 4              | 3              |
+| Stone Mite  | 6              | 5              |
+| fallback    | 5              | 4              |
+
+At speed 2 an Emberling placed at y=130 reaches the enemy base area (~y=20) in ~220 ticks (~7 seconds) of continuous sim time.
+
+---
+
+### Combat effect particle density
+
+CombatEffect durations and per-tick spawn counts were increased to produce more visible and reliable particle contact with targets:
+
+| Effect kind | Old duration | New duration | Old particles/tick | New particles/tick |
+|-------------|:---:|:---:|:---:|:---:|
+| spray (fire)| 8   | 12  | 4 + optional 1   | 6 + conditional 2 |
+| beam (water)| 10  | 14  | 3 + 1 splash     | 5 + 2 splash       |
+| burst (sand)| 6   | 8   | 8→5→2            | 10→8→5→3           |
+
+The target-concentration burst at the end of each spray tick now fires with 80% probability (was 60%) and places two particles instead of one.
+
+---
+
+### Damage and erosion tuning
+
+`simDamage.ts` probability constants were adjusted upward to give more visible consequences:
+
+| Constant             | Old   | New  |
+|----------------------|-------|------|
+| FIRE_DAMAGE_PROB     | 0.40  | 0.55 |
+| SAND_DAMAGE_PROB     | 0.10  | 0.12 |
+| CORE_FIRE_REMOVE_PROB| 0.04  | 0.06 |
+| WALL_FIRE_REMOVE_PROB| 0.02  | 0.03 |
+
+All values still use `gs.sim.prng` exclusively — no `Math.random` introduced.
+
+---
+
+### Battlefield labels
+
+`battlefieldEntities.ts` exports `drawBattlefieldLabels(ctx, gs)`, called last in the render pass (after creatures) so labels always appear on top:
+
+- **"PLAYER CORE"** rendered in cyan below the player fortress HP bar.
+- **"ENEMY CORE"** rendered in red-orange above the enemy fortress HP bar.
+- **White selection ring**: when a creature is selected as an attacker (`gs.selectedAttackerUid`), a 12×12 white pixel rectangle is drawn around it on the canvas. This matches the sidebar `attacker-selected` CSS glow.
+
+---
+
+### Replay version bump
+
+`REPLAY_VERSION` bumped from `deckadent-replay-v2` to `deckadent-replay-v3` because the particle-spawn PRNG call sequence in `combatEffects.ts` changed (more particles per tick = more PRNG draws). Old v2 replay records will be rejected with a warning; a new v3 record is written after the next game.
+
+---
+
+### Current limitations (Phase 7)
+
+- **No creature–creature cross-team collision.** Creatures from opposing teams pass through each other.
+- **No networking.** Hotseat only.
+- **Structure cards not used by AI.** Enemy deck does not include structure cards.
+- **Single replay slot.** Only the latest completed game is stored in localStorage.
+- **UID counter is module-level.** (see Phase 5 limitation note)
