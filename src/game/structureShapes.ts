@@ -1,4 +1,4 @@
-import type { SimState } from './types';
+import type { Owner, SimState } from './types';
 
 // ---------------------------------------------------------------------------
 // Deterministic structure placement helpers.
@@ -14,11 +14,13 @@ import type { SimState } from './types';
 //     flying particles, so structures are physically meaningful.
 // ---------------------------------------------------------------------------
 
-function setWall(sim: SimState, x: number, y: number): void {
+const WALL_DURABILITY = 3;
+
+function setWall(sim: SimState, x: number, y: number, owner: Owner): void {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;
   const idx = y * sim.width + x;
   if (sim.grid[idx].type === 'CORE') return; // never overwrite the base core
-  sim.grid[idx] = { type: 'WALL', lifetime: 0 };
+  sim.grid[idx] = { type: 'WALL', lifetime: WALL_DURABILITY, owner };
 }
 
 // ─── Primitive shapes ─────────────────────────────────────────────────────────
@@ -33,22 +35,23 @@ export function placeWallLine(
   cy: number,
   length: number,
   orientation: 'horizontal' | 'vertical' = 'horizontal',
+  owner: Owner = 'player',
 ): void {
   const half = Math.floor(length / 2);
   for (let i = -half; i <= half; i++) {
-    if (orientation === 'horizontal') setWall(sim, cx + i, cy);
-    else                              setWall(sim, cx,     cy + i);
+    if (orientation === 'horizontal') setWall(sim, cx + i, cy, owner);
+    else                              setWall(sim, cx,     cy + i, owner);
   }
 }
 
 /**
  * Hollow rectangle of WALL cells centered at (cx, cy) with full width w, height h.
  */
-export function placeWallRect(sim: SimState, cx: number, cy: number, w: number, h: number): void {
+export function placeWallRect(sim: SimState, cx: number, cy: number, w: number, h: number, owner: Owner = 'player'): void {
   const x0 = cx - Math.floor(w / 2);
   const y0 = cy - Math.floor(h / 2);
-  for (let i = 0; i <= w; i++) { setWall(sim, x0 + i, y0); setWall(sim, x0 + i, y0 + h); }
-  for (let i = 1; i < h; i++) { setWall(sim, x0, y0 + i); setWall(sim, x0 + w, y0 + i); }
+  for (let i = 0; i <= w; i++) { setWall(sim, x0 + i, y0, owner); setWall(sim, x0 + i, y0 + h, owner); }
+  for (let i = 1; i < h; i++) { setWall(sim, x0, y0 + i, owner); setWall(sim, x0 + w, y0 + i, owner); }
 }
 
 /**
@@ -56,21 +59,21 @@ export function placeWallRect(sim: SimState, cx: number, cy: number, w: number, 
  * each `length` wide, centered at (cx, cy).
  * Guides water and sand through the corridor between the rails.
  */
-export function placeChannel(sim: SimState, cx: number, cy: number, length: number, gap: number): void {
+export function placeChannel(sim: SimState, cx: number, cy: number, length: number, gap: number, owner: Owner = 'player'): void {
   const halfGap = Math.floor(gap / 2);
-  placeWallLine(sim, cx, cy - halfGap, length, 'horizontal');
-  placeWallLine(sim, cx, cy + halfGap, length, 'horizontal');
+  placeWallLine(sim, cx, cy - halfGap, length, 'horizontal', owner);
+  placeWallLine(sim, cx, cy + halfGap, length, 'horizontal', owner);
 }
 
 /**
  * Firebreak: wide sparse horizontal line (every other column, 2 rows tall)
  * centered at (cx, cy). Slows fire spread without forming a solid barrier.
  */
-export function placeFirebreak(sim: SimState, cx: number, cy: number, width: number): void {
+export function placeFirebreak(sim: SimState, cx: number, cy: number, width: number, owner: Owner = 'player'): void {
   const half = Math.floor(width / 2);
   for (let i = -half; i <= half; i += 2) {
-    setWall(sim, cx + i, cy);
-    setWall(sim, cx + i, cy + 1);
+    setWall(sim, cx + i, cy, owner);
+    setWall(sim, cx + i, cy + 1, owner);
   }
 }
 
@@ -80,11 +83,11 @@ export function placeFirebreak(sim: SimState, cx: number, cy: number, width: num
  * Apply a named structure shape centered at (cx, cy).
  * Returns false if the shape name is unknown.
  */
-export function applyStructureShape(sim: SimState, shape: string, cx: number, cy: number): boolean {
+export function applyStructureShape(sim: SimState, shape: string, cx: number, cy: number, owner: Owner = 'player'): boolean {
   switch (shape) {
-    case 'wall_line':  placeWallLine(sim, cx, cy, 12, 'horizontal'); return true;
-    case 'channel':    placeChannel(sim, cx, cy, 8, 6);              return true;
-    case 'firebreak':  placeFirebreak(sim, cx, cy, 16);              return true;
+    case 'wall_line':  placeWallLine(sim, cx, cy, 12, 'horizontal', owner); return true;
+    case 'channel':    placeChannel(sim, cx, cy, 8, 6, owner);              return true;
+    case 'firebreak':  placeFirebreak(sim, cx, cy, 16, owner);              return true;
     default:           return false;
   }
 }

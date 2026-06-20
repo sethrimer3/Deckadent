@@ -36,6 +36,8 @@ export interface SimParticle {
   lifetime: number;
   /** Direction that gravity pulls this particle: 1 is down, -1 is up. */
   gravity?: 1 | -1;
+  /** Owning side for structures; omitted for non-structure particles. */
+  owner?: Owner;
   // `moved` is intentionally absent — it is a per-tick scratch value held in
   // a module-level Uint8Array in sandSim.ts and is never serialized.
 }

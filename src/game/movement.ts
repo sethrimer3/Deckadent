@@ -1,4 +1,4 @@
-import type { GameState, UnitInstance } from './types';
+import type { GameState, Owner, UnitInstance } from './types';
 import { SIM_W, SIM_H } from './sandSim';
 
 // ---------------------------------------------------------------------------
@@ -56,11 +56,26 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Move a single creature one step if the tick modulus matches its speed. */
-function stepCreature(unit: UnitInstance, tick: number, dy: number): void {
+function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: number, dy: number): void {
   if (unit.simX === undefined || unit.simY === undefined) return;
   const speed = speedFor(unit.defId);
   if (tick % speed !== 0) return;
-  unit.simY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
+  const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
+  const wall = gs.sim.grid[nextY * gs.sim.width + unit.simX];
+  if (wall.type !== 'WALL') {
+    unit.simY = nextY;
+    return;
+  }
+
+  // Friendly structures block movement but are never damaged by their summons.
+  if (wall.owner === owner) return;
+
+  // A summon attacks an opposing structure cell while blocked by it.
+  wall.lifetime -= Math.max(1, unit.attack);
+  if (wall.lifetime <= 0) {
+    gs.sim.grid[nextY * gs.sim.width + unit.simX] = { type: 'EMPTY', lifetime: 0 };
+    gs.combatLog.push(`${unit.uid} destroys an opposing structure cell.`);
+  }
 }
 
 /**
@@ -100,9 +115,9 @@ export function updateCreatureMovement(gs: GameState): void {
   const tick = gs.tick;
 
   // Player creatures march upward (dy = -1).
-  for (const unit of gs.player.creatures) stepCreature(unit, tick, -1);
+  for (const unit of gs.player.creatures) stepCreature(gs, unit, 'player', tick, -1);
   // Enemy creatures march downward (dy = +1).
-  for (const unit of gs.enemy.creatures) stepCreature(unit, tick, +1);
+  for (const unit of gs.enemy.creatures) stepCreature(gs, unit, 'enemy', tick, +1);
 
   // Separate overlapping units within each team.
   separateTeam(gs.player.creatures);

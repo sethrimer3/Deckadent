@@ -248,7 +248,7 @@ export function playCard(
     // All checks passed — write WALL cells and consume card.
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
-    applyStructureShape(gs.sim, shape, x, y);
+    applyStructureShape(gs.sim, shape, x, y, owner);
     gs.combatLog.push(`${label} places ${def.name} at (${x},${y}).`);
     ps.discard.push(card);
     return true;
