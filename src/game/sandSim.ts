@@ -2,7 +2,7 @@ import { createPRNG, nextFloat, chance } from './prng';
 import type { SimState, SimParticle, ParticleType } from './types';
 
 export const SIM_W = 320;
-export const SIM_H = 180;
+export const SIM_H = 320;
 
 const FIRE_MAX = 50;
 const SMOKE_MAX = 70;

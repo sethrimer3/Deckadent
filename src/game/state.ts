@@ -66,7 +66,7 @@ function makeBase(owner: Owner): BaseInstance {
     hp: CORE_CELL_COUNT,
     maxHp: CORE_CELL_COUNT,
     simX: 160,
-    simY: owner === 'player' ? 164 : 16,
+    simY: owner === 'player' ? 304 : 16,
   };
 }
 
@@ -114,7 +114,7 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
     hand,
     discard: [],
     generators: owner === 'player'
-      ? [makeUnit('spark_core', owner, 62, 148), makeUnit('spring_core', owner, 98, 148)]
+      ? [makeUnit('spark_core', owner, 62, 288), makeUnit('spring_core', owner, 98, 288)]
       : [makeUnit('spark_core', owner, 222, 32), makeUnit('spring_core', owner, 258, 32)],
     creatures: [],
     energy: 0,

@@ -89,19 +89,31 @@ function findWallContact(
 function findGeneratorContact(
   gs: GameState,
   unit: UnitInstance,
-  owner: Owner,
   nextY: number,
   dy: 1 | -1,
 ): UnitInstance | null {
   if (unit.simX === undefined || unit.simY === undefined) return null;
   const { halfWidth, leadingExtent } = collisionProfile(unit.defId);
-  const opposingGenerators = owner === 'player' ? gs.enemy.generators : gs.player.generators;
-  for (const generator of opposingGenerators) {
+  for (const generator of [...gs.player.generators, ...gs.enemy.generators]) {
     if (generator.simX === undefined || generator.simY === undefined) continue;
     const isAhead = (generator.simY - unit.simY) * dy > 0;
     const overlapsX = Math.abs(generator.simX - unit.simX) <= GENERATOR_COLLISION_RADIUS + halfWidth;
     const overlapsY = Math.abs(generator.simY - nextY) <= GENERATOR_COLLISION_RADIUS + leadingExtent;
     if (isAhead && overlapsX && overlapsY) return generator;
+  }
+  return null;
+}
+
+function findCreatureContact(gs: GameState, unit: UnitInstance, nextY: number, dy: 1 | -1): UnitInstance | null {
+  if (unit.simX === undefined) return null;
+  const profile = collisionProfile(unit.defId);
+  for (const other of [...gs.player.creatures, ...gs.enemy.creatures]) {
+    if (other.uid === unit.uid || other.simX === undefined || other.simY === undefined) continue;
+    const otherProfile = collisionProfile(other.defId);
+    const overlapsX = Math.abs(other.simX - unit.simX) <= profile.halfWidth + otherProfile.halfWidth;
+    const overlapsY = Math.abs(other.simY - nextY) <= profile.leadingExtent + otherProfile.leadingExtent;
+    const isAhead = (other.simY - unit.simY!) * dy > 0;
+    if (isAhead && overlapsX && overlapsY) return other;
   }
   return null;
 }
@@ -115,11 +127,13 @@ function findBaseContact(
 ): BaseInstance | null {
   if (unit.simX === undefined || unit.simY === undefined) return null;
   const { halfWidth, leadingExtent } = collisionProfile(unit.defId);
-  const base = owner === 'player' ? gs.enemy.base : gs.player.base;
-  const isAhead = (base.simY - unit.simY) * dy > 0;
-  const overlapsX = Math.abs(base.simX - unit.simX) <= BASE_COLLISION_RADIUS + halfWidth;
-  const overlapsY = Math.abs(base.simY - nextY) <= BASE_COLLISION_RADIUS + leadingExtent;
-  return isAhead && overlapsX && overlapsY ? base : null;
+  for (const base of [gs.player.base, gs.enemy.base]) {
+    const isAhead = (base.simY - unit.simY) * dy > 0;
+    const overlapsX = Math.abs(base.simX - unit.simX) <= BASE_COLLISION_RADIUS + halfWidth;
+    const overlapsY = Math.abs(base.simY - nextY) <= BASE_COLLISION_RADIUS + leadingExtent;
+    if (isAhead && overlapsX && overlapsY) return base;
+  }
+  return null;
 }
 
 /** Move a single creature one step if the tick modulus matches its speed. */
@@ -212,16 +226,17 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   if (tick % speed !== 0) return;
   const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
   const contact = findWallContact(gs, unit, nextY, dy);
-  const generator = contact ? null : findGeneratorContact(gs, unit, owner, nextY, dy);
+  const generator = contact ? null : findGeneratorContact(gs, unit, nextY, dy);
   const base = contact || generator ? null : findBaseContact(gs, unit, owner, nextY, dy);
-  if (!contact && !generator && !base) {
+  const creature = contact || generator || base ? null : findCreatureContact(gs, unit, nextY, dy);
+  if (!contact && !generator && !base && !creature) {
     unit.simY = nextY;
     return;
   }
   const wall = contact ? gs.sim.grid[contact.y * gs.sim.width + contact.x] : null;
 
   // Friendly structures block movement but are never damaged by their summons.
-  if (wall?.owner === owner) return;
+  if (wall?.owner === owner || generator?.owner === owner || base?.owner === owner || creature) return;
 
   // Summons without a dedicated collision effect remain blocked until the cell
   // is removed by another effect.
@@ -284,7 +299,4 @@ export function updateCreatureMovement(gs: GameState): void {
     ps.generators = ps.generators.filter(unit => unit.hp > 0);
   }
 
-  // Separate overlapping units within each team.
-  separateTeam(gs.player.creatures);
-  separateTeam(gs.enemy.creatures);
 }

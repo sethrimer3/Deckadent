@@ -116,7 +116,8 @@ export function canPlaceStructure(sim: SimState, cx: number, cy: number, radius:
     for (let dx = -radius; dx <= radius; dx++) {
       const x = cx + dx, y = cy + dy;
       if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
-      if (sim.grid[y * sim.width + x].type === 'CORE') return false;
+      const type = sim.grid[y * sim.width + x].type;
+      if (type === 'CORE' || type === 'WALL') return false;
     }
   }
   return true;

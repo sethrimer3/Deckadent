@@ -12,8 +12,8 @@ function calcSimPos(
   const startX = SIM_W / 2 - (spacing * (count - 1)) / 2;
   const x = Math.round(startX + spacing * index);
   const y = owner === 'enemy'
-    ? (zone === 'generator' ? 22 : 62)
-    : (zone === 'creature' ? 118 : 158);
+    ? (zone === 'generator' ? 32 : 80)
+    : (zone === 'creature' ? 240 : 288);
   return { x: Math.max(8, Math.min(SIM_W - 8, x)), y };
 }
 

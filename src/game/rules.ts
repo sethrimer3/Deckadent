@@ -173,6 +173,10 @@ export function playCard(
       if (owner === 'player') gs.combatLog.push('Cannot place creature — overlaps another unit.');
       return false;
     }
+    if (gs.sim.grid[placement.y * gs.sim.width + placement.x].type === 'WALL') {
+      if (owner === 'player') gs.combatLog.push('Cannot place creature inside a structure.');
+      return false;
+    }
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
@@ -238,6 +242,12 @@ export function playCard(
 
     const shape = def.structureShape ?? 'wall_line';
     const radius = structureRadius(shape);
+
+    const allUnitsS = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
+    if (overlapsExistingUnit(allUnitsS, x, y, radius)) {
+      if (owner === 'player') gs.combatLog.push(`Cannot place ${def.name} — overlaps a battlefield unit.`);
+      return false;
+    }
 
     // Reject if the footprint contains CORE cells or is out of bounds.
     if (!canPlaceStructure(gs.sim, x, y, radius)) {

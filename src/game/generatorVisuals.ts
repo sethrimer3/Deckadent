@@ -121,7 +121,7 @@ function drawGenerator(
   const pixels = pixelsForGenerator(unit);
   for (const p of pixels) {
     const x = cx + p.dx;
-    const y = cy + p.dy;
+    const y = cy + (unit.owner === 'enemy' ? -p.dy : p.dy);
     if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) continue;
     ctx.fillStyle = p.color;
     ctx.fillRect(x, y, 1, 1);
@@ -130,7 +130,7 @@ function drawGenerator(
 
 export function renderGeneratorStructures(ctx: CanvasRenderingContext2D, gs: GameState): void {
   gs.enemy.generators.forEach((unit, index) => drawGenerator(ctx, unit, 222 + index * 34, 32));
-  gs.player.generators.forEach((unit, index) => drawGenerator(ctx, unit, 62 + index * 34, 148));
+  gs.player.generators.forEach((unit, index) => drawGenerator(ctx, unit, 62 + index * 34, 288));
 }
 
 // ─── Base / core fortress renderer ───────────────────────────────────────────
