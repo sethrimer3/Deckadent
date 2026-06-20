@@ -38,6 +38,11 @@ export interface SimParticle {
   gravity?: 1 | -1;
   /** Owning side for structures; omitted for non-structure particles. */
   owner?: Owner;
+  /** Optional display tint for a structural cell. Rendering-only, but serialized
+   * with the cell so physical buildings retain their material identity. */
+  color?: string;
+  /** Unit that owns this individual structural cell, when it is a generator. */
+  structureUid?: string;
   // `moved` is intentionally absent — it is a per-tick scratch value held in
   // a module-level Uint8Array in sandSim.ts and is never serialized.
 }

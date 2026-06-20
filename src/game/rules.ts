@@ -5,6 +5,7 @@ import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
+import { canPlaceGeneratorParticles, clearGeneratorParticles, placeGeneratorParticles } from './generatorShapes';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -144,15 +145,26 @@ export function playCard(
       return false;
     }
 
+    const pendingGenerator: UnitInstance = {
+      uid: '', defId: def.id, hp: def.hp ?? 3, maxHp: def.hp ?? 3,
+      attack: 0, hasAttacked: false, owner, simX: placement.x, simY: placement.y,
+    };
+    if (!canPlaceGeneratorParticles(gs.sim, pendingGenerator)) {
+      if (owner === 'player') gs.combatLog.push('Cannot place generator — its physical cells overlap the field.');
+      return false;
+    }
+
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
-    ps.generators.push({
+    const generator: UnitInstance = {
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
       attack: 0, hasAttacked: false, owner,
       simX: placement.x,
       simY: placement.y,
-    });
+    };
+    ps.generators.push(generator);
+    placeGeneratorParticles(gs.sim, generator);
     gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
     ps.discard.push(card);
     return true;
@@ -326,8 +338,10 @@ export function attackTarget(
 
 export function destroyDeadUnits(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
-    for (const u of ps.generators.filter(u => u.hp <= 0))
+    for (const u of ps.generators.filter(u => u.hp <= 0)) {
       gs.combatLog.push(`${CARD_DEFS[u.defId].name} (generator) was destroyed!`);
+      clearGeneratorParticles(gs.sim, u.uid);
+    }
     for (const u of ps.creatures.filter(u => u.hp <= 0))
       gs.combatLog.push(`${CARD_DEFS[u.defId].name} was destroyed!`);
     ps.generators = ps.generators.filter(u => u.hp > 0);

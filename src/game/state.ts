@@ -3,6 +3,7 @@ import { createPRNG, nextFloat } from './prng';
 import type { PRNGState } from './prng';
 import { CARD_DEFS, PLAYER_STARTING_DECK, ENEMY_STARTING_DECK } from './cards';
 import { createSimState } from './sandSim';
+import { placeGeneratorParticles } from './generatorShapes';
 
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
@@ -168,6 +169,7 @@ export function createInitialGameState(seed?: number): GameState {
   placeCoreAtBase(sim, enemy.base);
   placeBaseShell(sim, player.base);
   placeBaseShell(sim, enemy.base);
+  for (const unit of [...player.generators, ...enemy.generators]) placeGeneratorParticles(sim, unit);
 
   return {
     player,

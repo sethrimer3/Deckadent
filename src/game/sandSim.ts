@@ -41,9 +41,12 @@ export function addParticle(
   if (xi < 0 || xi >= sim.width || yi < 0 || yi >= sim.height) return;
   // CORE and WALL are structural — placed directly, never via addParticle.
   if (type === 'CORE' || type === 'WALL') return;
-  // Protect existing structural cells from being overwritten by flying particles.
-  const existing = sim.grid[yi * sim.width + xi].type;
-  if (existing === 'CORE' || existing === 'WALL') return;
+  const existing = sim.grid[yi * sim.width + xi];
+  if (existing.type !== 'EMPTY') {
+    // Effect spawns collide too; they never overwrite an occupied cell.
+    resolveCollision(sim, { type, lifetime: 0, gravity }, xi, yi);
+    return;
+  }
   const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(sim.prng) * 20
            : type === 'SMOKE' ? SMOKE_MAX + nextFloat(sim.prng) * 20
            : type === 'SPARK' ? SPARK_MAX + nextFloat(sim.prng) * 15
@@ -108,6 +111,34 @@ function moveTo(sim: SimState, moved: Uint8Array, x: number, y: number, nx: numb
   moved[di] = 1;
 }
 
+/** Every occupied target is a collision. Specific pairs define the outcome;
+ * all other material pairs block instead of passing through each other. */
+function resolveCollision(sim: SimState, source: SimParticle, x: number, y: number): void {
+  const target = g(sim, x, y);
+  const waterHeat = (source.type === 'WATER' && (target.type === 'FIRE' || target.type === 'SPARK'))
+    || ((source.type === 'FIRE' || source.type === 'SPARK') && target.type === 'WATER');
+  if (waterHeat) {
+    sim.grid[y * sim.width + x] = { type: 'SMOKE', lifetime: 25 };
+    return;
+  }
+  if ((source.type === 'FIRE' || source.type === 'SPARK') && target.type === 'WALL') {
+    const i = y * sim.width + x;
+    const durability = target.lifetime - 1;
+    sim.grid[i] = durability <= 0 ? { type: 'EMPTY', lifetime: 0 } : { ...target, lifetime: durability };
+  }
+}
+
+function tryMove(sim: SimState, moved: Uint8Array, x: number, y: number, nx: number, ny: number): boolean {
+  if (nx < 0 || nx >= sim.width || ny < 0 || ny >= sim.height) return false;
+  const source = sim.grid[y * sim.width + x];
+  const target = sim.grid[ny * sim.width + nx];
+  if (target.type === 'EMPTY') { moveTo(sim, moved, x, y, nx, ny); return true; }
+  // Sand displaces water as its density interaction; neither is overwritten.
+  if (source.type === 'SAND' && target.type === 'WATER') { moveTo(sim, moved, x, y, nx, ny); return true; }
+  resolveCollision(sim, source, nx, ny);
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Step functions
 // ---------------------------------------------------------------------------
@@ -116,23 +147,20 @@ function stepSand(sim: SimState, moved: Uint8Array, x: number, y: number): void 
   const gravity = sim.grid[y * sim.width + x].gravity ?? 1;
   const nextY = y + gravity;
   if (nextY < 0 || nextY >= sim.height) return;
-  const below = g(sim, x, nextY).type;
-  if (below === 'EMPTY' || below === 'WATER') { moveTo(sim, moved, x, y, x, nextY); return; }
+  if (tryMove(sim, moved, x, y, x, nextY)) return;
   const d = chance(sim.prng, 0.5) ? 1 : -1;
   if (x + d >= 0 && x + d < sim.width) {
-    const bt = g(sim, x + d, nextY).type;
-    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x + d, nextY); return; }
+    if (tryMove(sim, moved, x, y, x + d, nextY)) return;
   }
   if (x - d >= 0 && x - d < sim.width) {
-    const bt = g(sim, x - d, nextY).type;
-    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x - d, nextY); }
+    tryMove(sim, moved, x, y, x - d, nextY);
   }
 }
 
 function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void {
   const gravity = sim.grid[y * sim.width + x].gravity ?? 1;
   const nextY = y + gravity;
-  if (nextY >= 0 && nextY < sim.height && isEmpty(sim, x, nextY)) { moveTo(sim, moved, x, y, x, nextY); return; }
+  if (nextY >= 0 && nextY < sim.height && tryMove(sim, moved, x, y, x, nextY)) return;
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
     if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && g(sim, nx, ny).type === 'FIRE') {
@@ -142,8 +170,8 @@ function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void
     }
   }
   const d = chance(sim.prng, 0.5) ? 1 : -1;
-  if (x + d >= 0 && x + d < sim.width && isEmpty(sim, x + d, y)) { moveTo(sim, moved, x, y, x + d, y); return; }
-  if (x - d >= 0 && x - d < sim.width && isEmpty(sim, x - d, y)) { moveTo(sim, moved, x, y, x - d, y); }
+  if (x + d >= 0 && x + d < sim.width && tryMove(sim, moved, x, y, x + d, y)) return;
+  if (x - d >= 0 && x - d < sim.width) tryMove(sim, moved, x, y, x - d, y);
 }
 
 function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
@@ -162,14 +190,16 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
       return;
     }
   }
-  if (y - 1 >= 0 && isEmpty(sim, x, y - 1) && chance(sim.prng, 0.25)) {
-    moveTo(sim, moved, x, y, x, y - 1); return;
+  if (y - 1 >= 0 && chance(sim.prng, 0.25) && tryMove(sim, moved, x, y, x, y - 1)) {
+    return;
   }
   if (chance(sim.prng, 0.06)) {
     const dx = chance(sim.prng, 0.5) ? 1 : -1;
     const nx = x + dx;
     if (nx >= 0 && nx < sim.width && isEmpty(sim, nx, y)) {
       sim.grid[y * sim.width + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4) };
+    } else if (nx >= 0 && nx < sim.width) {
+      resolveCollision(sim, p, nx, y);
     }
   }
 }
@@ -177,12 +207,12 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
 function stepSmoke(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
   if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0 }; return; }
-  if (y - 1 >= 0 && isEmpty(sim, x, y - 1) && chance(sim.prng, 0.35)) {
-    moveTo(sim, moved, x, y, x, y - 1); return;
+  if (y - 1 >= 0 && chance(sim.prng, 0.35) && tryMove(sim, moved, x, y, x, y - 1)) {
+    return;
   }
   const d = chance(sim.prng, 0.5) ? 1 : -1;
-  if (x + d >= 0 && x + d < sim.width && y - 1 >= 0 && isEmpty(sim, x + d, y - 1) && chance(sim.prng, 0.15)) {
-    moveTo(sim, moved, x, y, x + d, y - 1);
+  if (x + d >= 0 && x + d < sim.width && y - 1 >= 0 && chance(sim.prng, 0.15)) {
+    tryMove(sim, moved, x, y, x + d, y - 1);
   }
 }
 
@@ -194,14 +224,14 @@ function stepSpark(sim: SimState, moved: Uint8Array, x: number, y: number, p: Si
     const ny = y + (chance(sim.prng, 0.5) ? 1 : -1);
     if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
       sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX };
+    } else if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height) {
+      resolveCollision(sim, p, nx, ny);
     }
   }
   const dx = chance(sim.prng, 0.5) ? 1 : -1;
   const dy = chance(sim.prng, 0.55) ? -1 : (chance(sim.prng, 0.5) ? 1 : -1);
   const nx = x + dx, ny = y + dy;
-  if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
-    moveTo(sim, moved, x, y, nx, ny);
-  }
+  if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height) tryMove(sim, moved, x, y, nx, ny);
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +258,7 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
   for (let i = 0; i < grid.length; i++) {
     const p = grid[i];
     const pi = i * 4;
-    const [r, g, b] = COLORS[p.type];
+    const [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
     // VISUAL-ONLY: fire/spark flicker jitter uses Math.random — not gameplay-affecting.
     const jitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
     d[pi]     = Math.min(255, r + jitter);
@@ -238,4 +268,9 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
   }
 
   ctx.putImageData(img, 0, 0);
+}
+
+function hexToRgb(hex: string): readonly [number, number, number] {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }

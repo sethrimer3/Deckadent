@@ -49,6 +49,8 @@ function hashSimState(h: number, sim: SimState): number {
       h = djb2Update(h, p.lifetime | 0);
       h = djb2Update(h, p.gravity ?? 1);
       h = hashString(h, p.owner ?? '');
+      h = hashString(h, p.color ?? '');
+      h = hashString(h, p.structureUid ?? '');
     }
   }
   return h;
