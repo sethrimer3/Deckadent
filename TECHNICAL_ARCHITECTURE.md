@@ -495,10 +495,106 @@ Updated each frame after each tick batch completes.
 
 ### Current limitations (Phase 5)
 
-- **No WALL particle.** Card-placed structures that block projectiles are deferred.
 - **No networking.** Hotseat only. Commands are logged to localStorage (replay) but not sent over the network.
 - **Single replay slot.** `localStorage` holds only the latest game. A replay history requires a different storage model.
 - **UID counter is module-level.** `_uid` in `state.ts` is reset by `createInitialGameState`. Running two game instances in the same JS context (e.g., an iframe test harness) would share the counter — acceptable for the current single-page hotseat model. Moving to `nextUid: number` inside `GameState` would make this truly replay-safe without the single-instance constraint; deferred.
 - **CORE erosion rate is conservative.** May need tuning now that creatures advance across the field.
 - **No creature–creature collision between teams.** Creatures from opposite teams can still pass through each other.
 - **AI skips out-of-range creatures rather than waiting.** Creatures that cannot yet reach a target are not marked `hasAttacked`; they will simply not attack this turn, then march closer and attack next turn.
+
+---
+
+---
+
+## Phase 6: Physical Structures & Terrain Cards (completed)
+
+---
+
+### WALL particle (`src/game/sandSim.ts`, `src/game/types.ts`)
+
+- `WALL` added to `ParticleType` with type index 7 in `stateHash.ts`.
+- WALL is static: skipped in `updateSim` alongside CORE and EMPTY — no falling, no flow.
+- Rendered stone grey-brown `rgb(120, 105, 80)` — visually distinct from CORE (teal) and SAND (tan).
+- `addParticle` protects both WALL and CORE cells from being overwritten by flying particles (combat effects). WALL and CORE cannot be placed via `addParticle`.
+- Blocking behavior emerges from the existing movement rules: `stepSand`, `stepWater`, and `stepFire` only move particles to cells where `isEmpty()` returns true. WALL cells are not empty, so particles accumulate against them, flow around them, or are blocked by them.
+
+---
+
+### Deterministic WALL interaction rules
+
+| Particle | Behaviour near WALL |
+|---|---|
+| SAND | Piles up — falls and stops at the WALL cell above |
+| WATER | Flows around — tries adjacent EMPTY cells, ignores WALL |
+| FIRE | Cannot move through — sparks accumulate against WALL |
+| FIRE/SPARK (sustained) | 2% chance per 30-tick cycle to erode a WALL cell to EMPTY |
+
+All erosion uses `gs.sim.prng` — fully deterministic and covered by the sim grid hash.
+
+---
+
+### Structure cards (`src/game/cards.ts`)
+
+Three new STRUCTURE cards added to the player-only deck. Enemy deck unchanged (AI does not use structures yet).
+
+| Card | Cost | Shape | Effect |
+|---|---|---|---|
+| Stone Wall | 1 | `wall_line` | 12-wide horizontal line of WALL. Blocks sand, water, fire. Erodes under sustained fire. |
+| Channel | 2 | `channel` | Two 8-wide WALL rails 6px apart. Guides water/sand through the corridor between them. |
+| Firebreak | 1 | `firebreak` | 16-wide sparse WALL (every other column, 2 rows). Slows fire spread but leaves gaps. |
+
+---
+
+### Structure placement (`src/game/structureShapes.ts`, `src/game/rules.ts`, `src/game/commands.ts`)
+
+`TurnPhase` gains `'placing-structure'`. `GameState` gains `pendingStructureCardUid`.
+
+Placement flow (same pattern as generators/creatures):
+1. Player clicks a STRUCTURE card → UI enters `placing-structure` phase.
+2. Player clicks the canvas → `playCard` command issued with `placement: { x, y }`.
+3. `applyCommand` validates: game status, tick, owner, side bounds.
+4. `playCard` in `rules.ts` validates: bounds, owner side (lower half for player), no CORE cells in footprint (`canPlaceStructure`).
+5. On success: energy and hand mutated, `applyStructureShape` writes WALL cells to `gs.sim.grid`, card moved to discard, placement phase cleared.
+6. On failure: state unchanged, placement mode remains active.
+
+Side validation in `commands.ts`:
+- Player structures: `y >= SIM_H/2`.
+- Enemy structures: `y < SIM_H/2`.
+
+Structure placement is **fully command-authoritative** — captured in the command log and replayed identically by `verifyReplay`. No replay version bump needed because `playCard` with `placement` already existed.
+
+---
+
+### Structure shape helpers (`src/game/structureShapes.ts`)
+
+| Helper | Purpose |
+|---|---|
+| `placeWallLine(sim, cx, cy, length, orientation)` | Horizontal or vertical line centered at (cx, cy) |
+| `placeWallRect(sim, cx, cy, w, h)` | Hollow rectangle |
+| `placeChannel(sim, cx, cy, length, gap)` | Two parallel rails |
+| `placeFirebreak(sim, cx, cy, width)` | Sparse alternating-column wall |
+| `applyStructureShape(sim, shape, cx, cy)` | Named dispatch for card-driven placement |
+| `structureRadius(shape)` | Approximate half-span for CORE overlap checks |
+| `canPlaceStructure(sim, cx, cy, radius)` | Rejects if CORE cells are in footprint or center OOB |
+
+`setWall(sim, x, y)` — internal primitive: never overwrites CORE, silently skips OOB.
+
+---
+
+### WALL erosion (`src/game/simDamage.ts`)
+
+`erodeWallCells(gs)` runs every 30 ticks alongside `erodeCoreCells`:
+- Iterates every WALL cell in the grid.
+- If any FIRE or SPARK is within `CORE_RADIUS = 3`, 2% chance (`WALL_FIRE_REMOVE_PROB`) to remove the cell.
+- Slower than CORE erosion (4%) — structures are durable but not indestructible.
+- Uses `gs.sim.prng` exclusively. Result is part of the sim grid hash.
+
+---
+
+### Current limitations (Phase 6)
+
+- **No networking.** Hotseat only.
+- **AI does not use structure cards.** Structure cards are absent from the enemy deck. Deferred until AI can compute valid placements.
+- **No inter-team collision at walls.** Creatures pass through WALL cells visually; wall interaction is particle-only. Softbody collision with structures is a future sim feature.
+- **Single replay slot.** Only the latest game is stored.
+- **UID counter is module-level.** (see Phase 5 limitation note)

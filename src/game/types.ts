@@ -2,12 +2,12 @@ import type { PRNGState } from './prng';
 
 export type { PRNGState };
 
-export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE';
-export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL';
+export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE' | 'WALL';
+export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL' | 'STRUCTURE';
 export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
-export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature';
+export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature' | 'placing-structure';
 export type EffectKind = 'beam' | 'spray' | 'burst';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,8 @@ export interface CardDef {
   rulesText: string;
   effectKey: string;
   spellDamage?: number;
+  /** For STRUCTURE cards: which shape helper to apply at placement. */
+  structureShape?: string;
 }
 
 export interface CardInstance {
@@ -119,6 +121,7 @@ export interface GameState {
   pendingSpellCardUid: string | null;
   pendingGeneratorCardUid: string | null;
   pendingCreatureCardUid: string | null;
+  pendingStructureCardUid: string | null;
   combatLog: string[];
   status: GameStatus;
   aiActing: boolean;

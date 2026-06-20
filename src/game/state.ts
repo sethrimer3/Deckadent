@@ -155,6 +155,7 @@ export function createInitialGameState(seed?: number): GameState {
     pendingSpellCardUid: null,
     pendingGeneratorCardUid: null,
     pendingCreatureCardUid: null,
+    pendingStructureCardUid: null,
     combatEffects: [],
     nextEffectId: 0,
     combatLog: [

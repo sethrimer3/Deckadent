@@ -86,6 +86,38 @@ export const CARD_DEFS: Record<string, CardDef> = {
     effectKey: 'sand_burst',
     spellDamage: 2,
   },
+
+  // ── Structure cards ───────────────────────────────────────────────────────
+  stone_wall: {
+    id: 'stone_wall',
+    name: 'Stone Wall',
+    type: 'STRUCTURE',
+    cost: 1,
+    element: 'EARTH',
+    rulesText: 'Place a solid stone wall that blocks sand, water, and fire. Erodes under sustained fire.',
+    effectKey: 'none',
+    structureShape: 'wall_line',
+  },
+  channel: {
+    id: 'channel',
+    name: 'Channel',
+    type: 'STRUCTURE',
+    cost: 2,
+    element: 'EARTH',
+    rulesText: 'Place two stone rails that guide water and sand through a narrow corridor.',
+    effectKey: 'none',
+    structureShape: 'channel',
+  },
+  firebreak: {
+    id: 'firebreak',
+    name: 'Firebreak',
+    type: 'STRUCTURE',
+    cost: 1,
+    element: 'EARTH',
+    rulesText: 'Place a sparse stone barrier with gaps that slows fire spread but does not fully block it.',
+    effectKey: 'none',
+    structureShape: 'firebreak',
+  },
 };
 
 export const PLAYER_STARTING_DECK: string[] = [
@@ -97,6 +129,9 @@ export const PLAYER_STARTING_DECK: string[] = [
   'splash', 'splash',
   'ignite',
   'collapse',
+  'stone_wall', 'stone_wall',
+  'channel',
+  'firebreak',
 ];
 
 export const ENEMY_STARTING_DECK: string[] = [

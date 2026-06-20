@@ -90,6 +90,10 @@ function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | 
         if (cmd.owner === 'player' && y < halfY) return `player generator must be placed in lower half (y >= ${halfY})`;
         if (cmd.owner === 'enemy'  && y >= halfY) return `enemy generator must be placed in upper half (y < ${halfY})`;
       }
+      if (def.type === 'STRUCTURE') {
+        if (cmd.owner === 'player' && y < halfY) return `player structure must be placed in lower half (y >= ${halfY})`;
+        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy structure must be placed in upper half (y < ${halfY})`;
+      }
     }
   }
 

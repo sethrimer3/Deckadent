@@ -25,6 +25,7 @@ const EARTH_FIRE_RESIST_PROB  = 0.20;  // EARTH element is stonier, partial resi
 const SAND_DAMAGE_PROB        = 0.10;  // sand chips away at non-earth units
 const EARTH_SAND_DAMAGE_PROB  = 0.04;  // earth units shrug off most sand
 const CORE_FIRE_REMOVE_PROB   = 0.04;
+const WALL_FIRE_REMOVE_PROB   = 0.02;  // WALL erodes under fire, but slower than CORE
 
 // Per-uid log cooldown — throttle to one entry every ~3 seconds.
 const LOG_COOLDOWN_TICKS = 90;
@@ -91,6 +92,22 @@ function erodeCoreCells(gs: GameState): void {
   }
 }
 
+// ─── WALL erosion ────────────────────────────────────────────────────────────
+
+function erodeWallCells(gs: GameState): void {
+  const { sim } = gs;
+  for (let y = 0; y < sim.height; y++) {
+    for (let x = 0; x < sim.width; x++) {
+      const idx = y * sim.width + x;
+      if (sim.grid[idx].type !== 'WALL') continue;
+      const hotNear = countParticlesInFootprint(sim, { cx: x, cy: y, radius: CORE_RADIUS }, ['FIRE', 'SPARK']);
+      if (hotNear > 0 && chance(sim.prng, WALL_FIRE_REMOVE_PROB)) {
+        sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+      }
+    }
+  }
+}
+
 function syncBaseHp(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
     ps.base.hp = countCoreCells(gs.sim, ps.base);
@@ -116,6 +133,7 @@ export function resolveSimDamage(gs: GameState): void {
   }
 
   erodeCoreCells(gs);
+  erodeWallCells(gs);
   syncBaseHp(gs);
 
   for (const ps of [player, enemy]) {

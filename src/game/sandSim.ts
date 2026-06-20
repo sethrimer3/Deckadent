@@ -33,8 +33,11 @@ export function addParticle(sim: SimState, x: number, y: number, type: ParticleT
   const xi = Math.round(x);
   const yi = Math.round(y);
   if (xi < 0 || xi >= sim.width || yi < 0 || yi >= sim.height) return;
-  // CORE cells are placed directly by state init, not through addParticle
-  if (type === 'CORE') return;
+  // CORE and WALL are structural — placed directly, never via addParticle.
+  if (type === 'CORE' || type === 'WALL') return;
+  // Protect existing structural cells from being overwritten by flying particles.
+  const existing = sim.grid[yi * sim.width + xi].type;
+  if (existing === 'CORE' || existing === 'WALL') return;
   const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(sim.prng) * 20
            : type === 'SMOKE' ? SMOKE_MAX + nextFloat(sim.prng) * 20
            : type === 'SPARK' ? SPARK_MAX + nextFloat(sim.prng) * 15
@@ -59,8 +62,8 @@ export function updateSim(sim: SimState): void {
       const i = y * sim.width + x;
       if (moved[i]) continue;
       const p = sim.grid[i];
-      // EMPTY and CORE are static — no step needed
-      if (p.type === 'EMPTY' || p.type === 'CORE') continue;
+      // EMPTY, CORE, and WALL are static — no step needed
+      if (p.type === 'EMPTY' || p.type === 'CORE' || p.type === 'WALL') continue;
 
       switch (p.type) {
         case 'SAND':  stepSand(sim, moved, x, y); break;
@@ -203,7 +206,8 @@ const COLORS: Record<ParticleType, readonly [number, number, number]> = {
   SAND:  [185, 158, 82],
   SMOKE: [95, 95, 108],
   SPARK: [255, 220, 40],
-  CORE:  [0, 210, 160], // teal — physically significant base/core cells
+  CORE:  [0, 210, 160],  // teal — physically significant base/core cells
+  WALL:  [120, 105, 80], // stone grey-brown — player-placed structural barrier
 };
 
 export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {

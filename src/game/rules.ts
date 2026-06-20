@@ -4,6 +4,7 @@ import { newUid, startTurn, countCoreCells } from './state';
 import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
+import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -22,7 +23,10 @@ export function findUnit(gs: GameState, uid: string): UnitInstance | null {
 
 export function canPlayCard(gs: GameState, cardUid: string): boolean {
   if (gs.turn !== 'player' || gs.aiActing) return false;
-  const allowedPhase = gs.phase === 'main' || gs.phase === 'placing-generator' || gs.phase === 'placing-creature';
+  const allowedPhase = gs.phase === 'main'
+    || gs.phase === 'placing-generator'
+    || gs.phase === 'placing-creature'
+    || gs.phase === 'placing-structure';
   if (!allowedPhase) return false;
   const card = gs.player.hand.find(c => c.uid === cardUid);
   if (!card) return false;
@@ -211,6 +215,30 @@ export function playCard(
     return true;
   }
 
+  // ── STRUCTURE ──────────────────────────────────────────────────────────────
+  if (def.type === 'STRUCTURE') {
+    if (!placement) return false;
+    const { x, y } = placement;
+    if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) return false;
+    const halfY = SIM_H / 2;
+    if (owner === 'player' && y < halfY) return false;
+    if (owner === 'enemy'  && y >= halfY) return false;
+
+    const shape = def.structureShape ?? 'wall_line';
+    const radius = structureRadius(shape);
+
+    // Reject if the footprint contains CORE cells or is fully out of bounds.
+    if (!canPlaceStructure(gs.sim, x, y, radius)) return false;
+
+    // All checks passed — write WALL cells and consume card.
+    ps.energy -= def.cost;
+    ps.hand.splice(cardIdx, 1);
+    applyStructureShape(gs.sim, shape, x, y);
+    gs.combatLog.push(`${label} places ${def.name} at (${x},${y}).`);
+    ps.discard.push(card);
+    return true;
+  }
+
   return false;
 }
 
@@ -299,6 +327,7 @@ export function endTurn(gs: GameState): void {
   gs.pendingSpellCardUid = null;
   gs.pendingGeneratorCardUid = null;
   gs.pendingCreatureCardUid = null;
+  gs.pendingStructureCardUid = null;
   gs.phase = 'main';
   gs.turn = gs.turn === 'player' ? 'enemy' : 'player';
   startTurn(gs);

@@ -57,7 +57,7 @@ function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = 
 function handCard(card: CardInstance, gs: GameState): string {
   const def = CARD_DEFS[card.defId];
   const playable = canPlayCard(gs, card.uid);
-  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid || gs.pendingGeneratorCardUid === card.uid || gs.pendingCreatureCardUid === card.uid;
+  const selected = gs.selectedCardUid === card.uid || gs.pendingSpellCardUid === card.uid || gs.pendingGeneratorCardUid === card.uid || gs.pendingCreatureCardUid === card.uid || gs.pendingStructureCardUid === card.uid;
   const cls = [
     'hand-card',
     playable ? 'playable' : 'unplayable',
@@ -129,6 +129,8 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     phaseMsg = `<div class="phase-msg">Click the simulation field to place your generator.</div>`;
   } else if (phase === 'placing-creature') {
     phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your creature.</div>`;
+  } else if (phase === 'placing-structure') {
+    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your structure.</div>`;
   }
 
   const endTurnBtn = turn === 'player' && !gs.aiActing
@@ -204,7 +206,7 @@ ${status !== 'playing' ? `
 
   const slot = appEl.querySelector('#canvas-slot');
   if (slot) slot.appendChild(_canvas);
-  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator' || gs.phase === 'placing-creature');
+  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator' || gs.phase === 'placing-creature' || gs.phase === 'placing-structure');
 
   bindEvents(gs, appEl);
 }
@@ -264,10 +266,23 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
         return;
       }
 
+      if (def.type === 'STRUCTURE') {
+        gs.pendingStructureCardUid = uid;
+        gs.pendingSpellCardUid = null;
+        gs.pendingGeneratorCardUid = null;
+        gs.pendingCreatureCardUid = null;
+        gs.selectedCardUid = uid;
+        gs.phase = 'placing-structure';
+        gs.selectedAttackerUid = null;
+        _renderFn();
+        return;
+      }
+
       // Creature: enter placement phase so player clicks a battlefield position.
       gs.pendingCreatureCardUid = uid;
       gs.pendingSpellCardUid = null;
       gs.pendingGeneratorCardUid = null;
+      gs.pendingStructureCardUid = null;
       gs.selectedCardUid = uid;
       gs.phase = 'placing-creature';
       gs.selectedAttackerUid = null;
@@ -301,21 +316,25 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     e.stopPropagation();
     if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
 
-    const isPlacingGen      = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
-    const isPlacingCreature = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
-    if (!isPlacingGen && !isPlacingCreature) return;
+    const isPlacingGen       = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
+    const isPlacingCreature  = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
+    const isPlacingStructure = gs.phase === 'placing-structure' && !!gs.pendingStructureCardUid;
+    if (!isPlacingGen && !isPlacingCreature && !isPlacingStructure) return;
 
     const rect = _canvas.getBoundingClientRect();
     const x = Math.max(0, Math.min(_canvas.width - 1,  Math.round(((e.clientX - rect.left) / rect.width)  * _canvas.width)));
     const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height)));
 
-    const cardUid = isPlacingGen ? gs.pendingGeneratorCardUid! : gs.pendingCreatureCardUid!;
+    const cardUid = isPlacingGen ? gs.pendingGeneratorCardUid!
+                  : isPlacingCreature ? gs.pendingCreatureCardUid!
+                  : gs.pendingStructureCardUid!;
     const ok = applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
 
     // Only clear placement state on success — rejected placements keep the phase active.
     if (ok) {
       gs.pendingGeneratorCardUid = null;
       gs.pendingCreatureCardUid = null;
+      gs.pendingStructureCardUid = null;
       gs.selectedCardUid = null;
       gs.phase = 'main';
     }
@@ -385,6 +404,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       gs.pendingSpellCardUid = null;
       gs.pendingGeneratorCardUid = null;
       gs.pendingCreatureCardUid = null;
+      gs.pendingStructureCardUid = null;
       _renderFn();
     }
   });
