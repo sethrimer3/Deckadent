@@ -34,6 +34,8 @@ export interface CombatEffect {
 export interface SimParticle {
   type: ParticleType;
   lifetime: number;
+  /** Direction that gravity pulls this particle: 1 is down, -1 is up. */
+  gravity?: 1 | -1;
   // `moved` is intentionally absent — it is a per-tick scratch value held in
   // a module-level Uint8Array in sandSim.ts and is never serialized.
 }

@@ -29,7 +29,13 @@ export function createSimState(seed: number): SimState {
   return { width: SIM_W, height: SIM_H, grid, prng: createPRNG(seed) };
 }
 
-export function addParticle(sim: SimState, x: number, y: number, type: ParticleType): void {
+export function addParticle(
+  sim: SimState,
+  x: number,
+  y: number,
+  type: ParticleType,
+  gravity: 1 | -1 = 1,
+): void {
   const xi = Math.round(x);
   const yi = Math.round(y);
   if (xi < 0 || xi >= sim.width || yi < 0 || yi >= sim.height) return;
@@ -42,7 +48,7 @@ export function addParticle(sim: SimState, x: number, y: number, type: ParticleT
            : type === 'SMOKE' ? SMOKE_MAX + nextFloat(sim.prng) * 20
            : type === 'SPARK' ? SPARK_MAX + nextFloat(sim.prng) * 15
            : 0;
-  sim.grid[yi * sim.width + xi] = { type, lifetime: lt };
+  sim.grid[yi * sim.width + xi] = { type, lifetime: lt, gravity };
 }
 
 /** Convenience: random float from the sim PRNG. Used by effects.ts. */
@@ -107,22 +113,26 @@ function moveTo(sim: SimState, moved: Uint8Array, x: number, y: number, nx: numb
 // ---------------------------------------------------------------------------
 
 function stepSand(sim: SimState, moved: Uint8Array, x: number, y: number): void {
-  if (y + 1 >= sim.height) return;
-  const below = g(sim, x, y + 1).type;
-  if (below === 'EMPTY' || below === 'WATER') { moveTo(sim, moved, x, y, x, y + 1); return; }
+  const gravity = sim.grid[y * sim.width + x].gravity ?? 1;
+  const nextY = y + gravity;
+  if (nextY < 0 || nextY >= sim.height) return;
+  const below = g(sim, x, nextY).type;
+  if (below === 'EMPTY' || below === 'WATER') { moveTo(sim, moved, x, y, x, nextY); return; }
   const d = chance(sim.prng, 0.5) ? 1 : -1;
   if (x + d >= 0 && x + d < sim.width) {
-    const bt = g(sim, x + d, y + 1).type;
-    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x + d, y + 1); return; }
+    const bt = g(sim, x + d, nextY).type;
+    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x + d, nextY); return; }
   }
   if (x - d >= 0 && x - d < sim.width) {
-    const bt = g(sim, x - d, y + 1).type;
-    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x - d, y + 1); }
+    const bt = g(sim, x - d, nextY).type;
+    if (bt === 'EMPTY' || bt === 'WATER') { moveTo(sim, moved, x, y, x - d, nextY); }
   }
 }
 
 function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void {
-  if (y + 1 < sim.height && isEmpty(sim, x, y + 1)) { moveTo(sim, moved, x, y, x, y + 1); return; }
+  const gravity = sim.grid[y * sim.width + x].gravity ?? 1;
+  const nextY = y + gravity;
+  if (nextY >= 0 && nextY < sim.height && isEmpty(sim, x, nextY)) { moveTo(sim, moved, x, y, x, nextY); return; }
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as [number, number][]) {
     const nx = x + dx, ny = y + dy;
     if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && g(sim, nx, ny).type === 'FIRE') {

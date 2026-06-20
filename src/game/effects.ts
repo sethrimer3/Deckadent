@@ -39,14 +39,15 @@ export function getUnitSimPos(gs: GameState, uid: string): { x: number; y: numbe
 
 function spawnWaterBeam(sim: SimState, fx: number, fy: number, tx: number, ty: number): void {
   const dx = tx - fx, dy = ty - fy;
+  const gravity: 1 | -1 = ty < fy ? -1 : 1;
   const len = Math.sqrt(dx * dx + dy * dy);
   const steps = Math.ceil(len * 1.1);
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
     const x = Math.round(fx + dx * t);
     const y = Math.round(fy + dy * t);
-    addParticle(sim, x, y, 'WATER');
-    if (simRand(sim) < 0.4) addParticle(sim, x + (simRand(sim) < 0.5 ? 1 : -1), y, 'WATER');
+    addParticle(sim, x, y, 'WATER', gravity);
+    if (simRand(sim) < 0.4) addParticle(sim, x + (simRand(sim) < 0.5 ? 1 : -1), y, 'WATER', gravity);
   }
 }
 
@@ -71,13 +72,14 @@ function spawnFireSpray(sim: SimState, fx: number, fy: number, tx: number, ty: n
 }
 
 function spawnSandBurst(sim: SimState, fx: number, fy: number, tx: number, ty: number): void {
-  void fx; void fy;
+  const gravity: 1 | -1 = ty < fy ? -1 : 1;
   for (let i = 0; i < 45; i++) {
     addParticle(
       sim,
       tx + Math.round((simRand(sim) - 0.5) * 26),
-      ty - 30 - Math.round(simRand(sim) * 25),
-      'SAND'
+      ty - gravity * (30 + Math.round(simRand(sim) * 25)),
+      'SAND',
+      gravity,
     );
   }
 }

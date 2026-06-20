@@ -53,14 +53,15 @@ export function enqueueEffect(
 function spawnBeamTick(gs: GameState, sx: number, sy: number, tx: number, ty: number): void {
   const sim = gs.sim;
   const dx = tx - sx, dy = ty - sy;
+  const gravity: 1 | -1 = ty < sy ? -1 : 1;
   // 5 water particles along the beam line per tick (was 3).
   for (let k = 0; k < 5; k++) {
     const t = simRand(sim);
-    addParticle(sim, Math.round(sx + dx * t), Math.round(sy + dy * t), 'WATER');
+    addParticle(sim, Math.round(sx + dx * t), Math.round(sy + dy * t), 'WATER', gravity);
   }
   // Double splash at target for better particle concentration.
-  addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 4), ty + Math.round((simRand(sim) - 0.5) * 4), 'WATER');
-  addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 3), ty + Math.round((simRand(sim) - 0.5) * 3), 'WATER');
+  addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 4), ty + Math.round((simRand(sim) - 0.5) * 4), 'WATER', gravity);
+  addParticle(sim, tx + Math.round((simRand(sim) - 0.5) * 3), ty + Math.round((simRand(sim) - 0.5) * 3), 'WATER', gravity);
 }
 
 function spawnSprayTick(gs: GameState, sx: number, sy: number, tx: number, ty: number): void {
@@ -80,14 +81,15 @@ function spawnSprayTick(gs: GameState, sx: number, sy: number, tx: number, ty: n
   }
 }
 
-function spawnBurstTick(gs: GameState, tx: number, ty: number, ticksRemaining: number): void {
+function spawnBurstTick(gs: GameState, sx: number, sy: number, tx: number, ty: number, ticksRemaining: number): void {
   const sim = gs.sim;
+  const gravity: 1 | -1 = ty < sy ? -1 : 1;
   // Heavier initial drop, tapering toward end.
   const count = ticksRemaining >= 6 ? 10 : ticksRemaining >= 4 ? 8 : ticksRemaining >= 2 ? 5 : 3;
   for (let k = 0; k < count; k++) {
     const x = tx + Math.round((simRand(sim) - 0.5) * 22);
-    const y = ty - 18 - Math.round(simRand(sim) * 14);
-    addParticle(sim, x, y, 'SAND');
+    const y = ty - gravity * (18 + Math.round(simRand(sim) * 14));
+    addParticle(sim, x, y, 'SAND', gravity);
   }
 }
 
@@ -109,7 +111,7 @@ export function updateCombatEffects(gs: GameState): void {
     switch (fx.effectKind) {
       case 'beam':  spawnBeamTick(gs, s.x, s.y, t.x, t.y); break;
       case 'spray': spawnSprayTick(gs, s.x, s.y, t.x, t.y); break;
-      case 'burst': spawnBurstTick(gs, t.x, t.y, remaining); break;
+      case 'burst': spawnBurstTick(gs, s.x, s.y, t.x, t.y, remaining); break;
     }
     alive.push(fx);
   }

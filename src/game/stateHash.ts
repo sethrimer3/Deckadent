@@ -47,6 +47,7 @@ function hashSimState(h: number, sim: SimState): number {
     if (p.type !== 'EMPTY') {
       // Include lifetime for non-empty cells — particles age deterministically.
       h = djb2Update(h, p.lifetime | 0);
+      h = djb2Update(h, p.gravity ?? 1);
     }
   }
   return h;
