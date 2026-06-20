@@ -29,6 +29,32 @@ export function getBaseFootprint(base: BaseInstance): Footprint {
   return { cx: base.simX, cy: base.simY, radius: BASE_RADIUS };
 }
 
+/**
+ * Minimum Chebyshev distance between a new placement center and an existing
+ * unit center before placement is rejected as an overlap.
+ */
+export const MIN_PLACEMENT_SEPARATION = 8;
+
+/**
+ * Returns true if the proposed placement position is too close to any existing
+ * unit (generator or creature) that has a sim position.
+ * Uses Chebyshev distance — same metric as the movement separation pass.
+ */
+export function overlapsExistingUnit(
+  units: readonly UnitInstance[],
+  x: number,
+  y: number,
+  minSep: number = MIN_PLACEMENT_SEPARATION,
+): boolean {
+  for (const u of units) {
+    if (u.simX === undefined || u.simY === undefined) continue;
+    const dx = Math.abs(u.simX - x);
+    const dy = Math.abs(u.simY - y);
+    if (dx <= minSep && dy <= minSep) return true;
+  }
+  return false;
+}
+
 /** Count particles of the given types within a footprint's bounding square. */
 export function countParticlesInFootprint(
   sim: SimState,

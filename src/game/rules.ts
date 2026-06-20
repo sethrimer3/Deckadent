@@ -3,7 +3,7 @@ import { CARD_DEFS } from './cards';
 import { newUid, startTurn, countCoreCells } from './state';
 import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
-import { getUnitFootprint } from './footprint';
+import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -78,6 +78,8 @@ export function playCard(
     const halfY = SIM_H / 2;
     if (owner === 'player' && placement.y < halfY) return false;
     if (owner === 'enemy'  && placement.y >= halfY) return false;
+    const allUnitsG = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
+    if (overlapsExistingUnit(allUnitsG, placement.x, placement.y)) return false;
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
@@ -100,6 +102,8 @@ export function playCard(
     if (owner === 'player' && placement.y < halfY) return false;
     if (owner === 'enemy'  && placement.y >= halfY) return false;
     if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
+    const allUnitsC = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
+    if (overlapsExistingUnit(allUnitsC, placement.x, placement.y)) return false;
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
