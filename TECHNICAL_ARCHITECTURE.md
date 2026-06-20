@@ -395,26 +395,43 @@ Because `simX/simY` are already in the state hash, movement and separation are a
 
 ---
 
-### Attack range validation (`src/game/rules.ts`)
+### Attack range helpers (`src/game/rules.ts`)
 
-- `attackTarget` rejects attacks where the Chebyshev distance between attacker and target exceeds `MAX_ATTACK_RANGE = 160`.
-- Uses integer Chebyshev distance (`max(|dx|, |dy|)`) — no floating-point.
-- Creatures must advance toward the enemy before their attacks become valid.
-- AI already selects targets by UID without range awareness; because AI creatures move like player creatures, they will naturally be in range when they attack.
+`MAX_ATTACK_RANGE = 160` is the single authoritative constant (exported). Both `attackTarget` and the AI use the same helper set — no duplicated distance logic:
+
+| Helper | Purpose |
+|---|---|
+| `getAttackSourcePos(attacker)` | sim center of attacker unit, or null if no sim pos |
+| `getTargetPos(gs, targetUid?, targetBase?)` | sim center of target unit or base |
+| `isInAttackRange(src, tgt)` | Chebyshev distance ≤ MAX_ATTACK_RANGE |
+| `canCreatureAttack(gs, attacker, targetUid?, targetBase?)` | combines the three above |
+
+`attackTarget` in `rules.ts` calls `getAttackSourcePos` + `isInAttackRange` directly. The AI imports `canCreatureAttack` and pre-filters targets so it never emits an out-of-range command.
+
+---
+
+### AI legal attack selection (`src/game/ai.ts`)
+
+The old AI picked the first ready creature and issued `attackTarget` regardless of range. Because `attackTarget` now rejects out-of-range attacks, this caused an infinite loop: the same rejected command was re-emitted every `step()` call.
+
+Fix: `computeNextAICommand` uses `canCreatureAttack` to find an in-range unit target or base target before building a command. If no legal target exists for a creature, that creature is skipped (without marking `hasAttacked`). The AI falls through all creatures and emits `endTurn` rather than stalling.
 
 ---
 
 ### Replay / localStorage (`src/game/replay.ts`)
 
-#### Format (version `deckadent-replay-v1`)
+#### Format (version `deckadent-replay-v2`)
+
+v2 adds `finalTick` so verification advances the sim to the exact saved tick before comparing hashes. v1 records are rejected with a warning.
 
 ```typescript
 interface ReplayRecord {
-  version: string;      // schema version tag
+  version: string;      // 'deckadent-replay-v2'
   timestamp: number;    // Unix ms — cosmetic only
   initialSeed: number;  // passed to createInitialGameState
   commands: Command[];  // full accepted command log in order
-  finalHash: string;    // hashHex(gs) at game end
+  finalTick: number;    // gs.tick at save time — required for deterministic hash
+  finalHash: string;    // hashHex(gs) at finalTick
   outcome: string;      // 'win' | 'lose'
 }
 ```
@@ -423,18 +440,41 @@ Stored under `localStorage['deckadent-latest-replay']`.
 
 #### Save
 
-`saveReplay(gs)` is called once in `main.ts` when `gs.status` transitions out of `'playing'`.
+`saveReplay(gs)` stores `finalTick: gs.tick` alongside the hash. Console output includes `finalTick`, `finalHash`, and command count.
 
 #### Load & verify
 
-`loadLatestReplay()` retrieves and version-checks the record.
+`loadLatestReplay()` version-checks and rejects records missing `finalTick`.
 
-`verifyReplay(record)` re-simulates from scratch:
+`verifyReplay(record)` re-simulates from scratch, using the canonical per-tick order:
+
+```
+gs.tick++  →  updateCombatEffects  →  updateCreatureMovement  →  updateSim  →  resolveSimDamage
+```
+
 1. `resetUidCounter()` then `createInitialGameState(initialSeed)`.
-2. For each command, fast-forward `gs.tick` to `cmd.tick`, then `applyCommand(gs, cmd, skipTickCheck=true)`.
-3. Compare `hashHex(gs)` to `record.finalHash`.
+2. For each command, fast-forward to `cmd.tick`, then apply with `{ skipTickCheck: true, logCommand: false }`.
+3. After all commands, continue advancing until `gs.tick === record.finalTick`.
+4. Compare `hashHex(gs)` to `record.finalHash`.
 
-To run verification: open the game with `?replay=latest` in the URL. Results are logged to the browser console.
+`logCommand: false` prevents replay verification from writing to the shared live-game command log.
+
+To run verification: open the game with `?replay=latest` in the URL. Results logged to the browser console as `[Replay] PASS ✓` or `[Replay] FAIL ✗` with expected/got hashes, finalTick, and command count.
+
+---
+
+### `applyCommand` options (`src/game/commands.ts`)
+
+```typescript
+interface ApplyOptions {
+  skipTickCheck?: boolean;  // default false — set true in replay runner
+  logCommand?: boolean;     // default true  — set false in replay runner
+}
+
+applyCommand(gs, cmd, opts?: ApplyOptions): boolean
+```
+
+All live-game callers (UI, AI) omit `opts` and get the defaults. The replay runner passes `{ skipTickCheck: true, logCommand: false }`.
 
 ---
 
@@ -458,6 +498,7 @@ Updated each frame after each tick batch completes.
 - **No WALL particle.** Card-placed structures that block projectiles are deferred.
 - **No networking.** Hotseat only. Commands are logged to localStorage (replay) but not sent over the network.
 - **Single replay slot.** `localStorage` holds only the latest game. A replay history requires a different storage model.
-- **UID counter is module-level.** `_uid` in `state.ts` is reset by `createInitialGameState`, which means running two game instances in the same JS context (e.g., iframe) would share the counter. Acceptable for the current single-page hotseat model.
+- **UID counter is module-level.** `_uid` in `state.ts` is reset by `createInitialGameState`. Running two game instances in the same JS context (e.g., an iframe test harness) would share the counter — acceptable for the current single-page hotseat model. Moving to `nextUid: number` inside `GameState` would make this truly replay-safe without the single-instance constraint; deferred.
 - **CORE erosion rate is conservative.** May need tuning now that creatures advance across the field.
 - **No creature–creature collision between teams.** Creatures from opposite teams can still pass through each other.
+- **AI skips out-of-range creatures rather than waiting.** Creatures that cannot yet reach a target are not marked `hasAttacked`; they will simply not attack this turn, then march closer and attack next turn.

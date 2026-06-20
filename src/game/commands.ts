@@ -116,8 +116,18 @@ function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | 
 //
 // Validates the command before applying it. Rejected commands are pushed to
 // _rejectedLog and not applied. Only accepted commands go into _commandLog.
+//
+// opts.skipTickCheck — set true in replay runner (tick already advanced to cmd.tick).
+// opts.logCommand   — set false in replay runner to avoid polluting the live log.
 // ---------------------------------------------------------------------------
-export function applyCommand(gs: GameState, cmd: Command, skipTickCheck = false): boolean {
+export interface ApplyOptions {
+  skipTickCheck?: boolean;
+  logCommand?: boolean;
+}
+
+export function applyCommand(gs: GameState, cmd: Command, opts: ApplyOptions = {}): boolean {
+  const skipTickCheck = opts.skipTickCheck ?? false;
+  const logCommand    = opts.logCommand    ?? true;
   const err = validate(gs, cmd, skipTickCheck);
   if (err !== null) {
     _rejectedLog.push({ cmd, reason: err });
@@ -143,7 +153,7 @@ export function applyCommand(gs: GameState, cmd: Command, skipTickCheck = false)
   }
 
   if (ok) {
-    _commandLog.push(cmd);
+    if (logCommand) _commandLog.push(cmd);
   } else {
     _rejectedLog.push({ cmd, reason: 'action rejected by rules' });
   }

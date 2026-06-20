@@ -45,7 +45,60 @@ function dist(a: { x: number; y: number }, b: { x: number; y: number }): number 
 }
 
 /** Maximum Chebyshev distance for a valid attack. */
-const MAX_ATTACK_RANGE = 160;
+export const MAX_ATTACK_RANGE = 160;
+
+// ---------------------------------------------------------------------------
+// Attack-range helpers — exported so the AI can pre-filter illegal targets
+// without duplicating the distance logic.
+// ---------------------------------------------------------------------------
+
+/** Returns the sim source position for an attacking creature, or null if it has no sim pos. */
+export function getAttackSourcePos(attacker: UnitInstance): { x: number; y: number } | null {
+  const fp = getUnitFootprint(attacker);
+  return fp ? { x: fp.cx, y: fp.cy } : null;
+}
+
+/** Returns the sim position of a target unit or base inside gs, or null if not found. */
+export function getTargetPos(
+  gs: GameState,
+  targetUid?: string,
+  targetBase?: Owner,
+): { x: number; y: number } | null {
+  if (targetUid) {
+    const u = findUnit(gs, targetUid);
+    return u ? unitPos(u, SIM_W / 2, SIM_H / 2) : null;
+  }
+  if (targetBase) {
+    const base = targetBase === 'player' ? gs.player.base : gs.enemy.base;
+    return { x: base.simX, y: base.simY };
+  }
+  return null;
+}
+
+/** Returns true if sourcePos is within MAX_ATTACK_RANGE of targetPos (Chebyshev). */
+export function isInAttackRange(
+  sourcePos: { x: number; y: number },
+  targetPos: { x: number; y: number },
+): boolean {
+  return dist(sourcePos, targetPos) <= MAX_ATTACK_RANGE;
+}
+
+/**
+ * Returns true if attacker can legally attack the given target unit or base.
+ * Checks sim position existence and range — does NOT check hasAttacked.
+ */
+export function canCreatureAttack(
+  gs: GameState,
+  attacker: UnitInstance,
+  targetUid?: string,
+  targetBase?: Owner,
+): boolean {
+  const srcPos = getAttackSourcePos(attacker);
+  if (!srcPos) return false;
+  const tgtPos = getTargetPos(gs, targetUid, targetBase);
+  if (!tgtPos) return false;
+  return isInAttackRange(srcPos, tgtPos);
+}
 
 // ---------------------------------------------------------------------------
 // playCard — validates all preconditions before any mutation.
@@ -178,9 +231,8 @@ export function attackTarget(
   if (!attacker || attacker.hasAttacked) return false;
 
   // Attacker must have a sim position to fire from.
-  const srcFp = getUnitFootprint(attacker);
-  if (!srcFp) return false;
-  const sourcePos = { x: srcFp.cx, y: srcFp.cy };
+  const sourcePos = getAttackSourcePos(attacker);
+  if (!sourcePos) return false;
 
   let targetPos: { x: number; y: number };
   let targetName: string;
@@ -201,8 +253,8 @@ export function attackTarget(
     return false;
   }
 
-  // Range check — prevents attacks across the whole field before creatures close in.
-  if (dist(sourcePos, targetPos) > MAX_ATTACK_RANGE) return false;
+  // Range check — uses shared helper so AI and player obey the same legality model.
+  if (!isInAttackRange(sourcePos, targetPos)) return false;
 
   const def = CARD_DEFS[attacker.defId];
   attacker.hasAttacked = true;

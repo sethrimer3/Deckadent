@@ -2,6 +2,7 @@ import type { GameState } from './types';
 import type { Command } from './commands';
 import { CARD_DEFS } from './cards';
 import { applyCommand } from './commands';
+import { canCreatureAttack } from './rules';
 
 // ---------------------------------------------------------------------------
 // AI command builder — computes the next single AI action as a Command.
@@ -51,15 +52,35 @@ function computeNextAICommand(gs: GameState): Command | null {
     }
   }
 
-  // 4. Attack with each ready creature — prefer unit targets; fall back to player base.
+  // 4. Attack with each ready creature — only emit commands for legal (in-range) attacks.
+  //    If a creature has no legal target yet, skip it rather than issuing a rejected command
+  //    that would cause the AI loop to stall on the same creature indefinitely.
   for (const creature of eps.creatures) {
     if (creature.hasAttacked) continue;
-    const target = pps.creatures[0] ?? pps.generators[0];
-    if (target) {
-      return { kind: 'attackTarget', tick: gs.tick, owner: 'enemy', attackerUid: creature.uid, targetUid: target.uid };
-    } else {
-      return { kind: 'attackTarget', tick: gs.tick, owner: 'enemy', attackerUid: creature.uid, targetBase: 'player' };
+
+    // Prefer unit targets; check range before building the command.
+    const unitTarget =
+      pps.creatures.find(t => canCreatureAttack(gs, creature, t.uid)) ??
+      pps.generators.find(t => canCreatureAttack(gs, creature, t.uid));
+
+    if (unitTarget) {
+      return {
+        kind: 'attackTarget', tick: gs.tick, owner: 'enemy',
+        attackerUid: creature.uid, targetUid: unitTarget.uid,
+      };
     }
+
+    // Fall back to base attack if in range.
+    if (canCreatureAttack(gs, creature, undefined, 'player')) {
+      return {
+        kind: 'attackTarget', tick: gs.tick, owner: 'enemy',
+        attackerUid: creature.uid, targetBase: 'player',
+      };
+    }
+
+    // No legal attack for this creature right now — skip it.
+    // We do NOT mark hasAttacked; the creature will try again next turn once
+    // it has marched closer to the opponent.
   }
 
   // 5. No more actions — end turn
