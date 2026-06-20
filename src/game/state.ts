@@ -7,8 +7,21 @@ import { createSimState } from './sandSim';
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
 
-let _effectId = 0;
-export function newEffectId(): string { return `fx${++_effectId}`; }
+/**
+ * Reset the module-level UID counter to 0.
+ * Call before createInitialGameState when running a deterministic replay
+ * so that all unit/card UIDs are assigned in the same order as the original run.
+ */
+export function resetUidCounter(): void { _uid = 0; }
+
+/**
+ * Derive the next effect ID from GameState and increment the counter.
+ * Effect IDs are now owned by GameState so they are deterministic and
+ * replay-stable — a fresh run from the same seed produces identical IDs.
+ */
+export function newEffectId(gs: { nextEffectId: number }): string {
+  return `fx${++gs.nextEffectId}`;
+}
 
 /** Fisher-Yates shuffle using the seeded gameplay PRNG. No Math.random. */
 export function shuffle<T>(arr: T[], prng: PRNGState): T[] {
@@ -112,6 +125,8 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
  * run is always reproducible given that seed value.
  */
 export function createInitialGameState(seed?: number): GameState {
+  // Reset UID counter so replay runs assign identical UIDs.
+  resetUidCounter();
   const initialSeed = (seed ?? Date.now()) >>> 0;
 
   // Gameplay PRNG drives deck shuffles, draw order, and any card-game decisions.
@@ -141,6 +156,7 @@ export function createInitialGameState(seed?: number): GameState {
     pendingGeneratorCardUid: null,
     pendingCreatureCardUid: null,
     combatEffects: [],
+    nextEffectId: 0,
     combatLog: [
       `Game started — Player goes first! (seed: ${initialSeed.toString(16)})`,
       'Play generators to increase energy. Creatures attack once per turn.',

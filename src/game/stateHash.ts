@@ -98,10 +98,13 @@ export function hashGameState(gs: GameState): number {
   h = hashPlayerState(h, gs.player);
   h = hashPlayerState(h, gs.enemy);
   h = hashSimState(h, gs.sim);
+  // Effect ID counter — authoritative, must be included so replay desync is detectable.
+  h = djb2Update(h, gs.nextEffectId);
   // Hash active combat effects — they are authoritative (drive particle spawning).
   h = djb2Update(h, gs.combatEffects.length);
   for (const fx of gs.combatEffects) {
     h = hashString(h, fx.id);
+    h = hashString(h, fx.owner);   // owner is authoritative — included from Phase 5
     h = hashString(h, fx.element);
     h = hashString(h, fx.effectKind);
     h = djb2Update(h, fx.sourcePos.x);

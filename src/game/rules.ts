@@ -39,6 +39,14 @@ function unitPos(unit: UnitInstance, fallbackX: number, fallbackY: number): { x:
   return fp ? { x: fp.cx, y: fp.cy } : { x: fallbackX, y: fallbackY };
 }
 
+/** Chebyshev distance between two points (integer, no float chaos). */
+function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+/** Maximum Chebyshev distance for a valid attack. */
+const MAX_ATTACK_RANGE = 160;
+
 // ---------------------------------------------------------------------------
 // playCard — validates all preconditions before any mutation.
 // ---------------------------------------------------------------------------
@@ -63,16 +71,24 @@ export function playCard(
 
   // ── GENERATOR ──────────────────────────────────────────────────────────────
   if (def.type === 'GENERATOR') {
+    // Placement is required for generators played from hand (same as creatures).
+    // Starting generators are placed directly via state.ts and bypass playCard.
+    if (!placement) return false;
+    if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
+    const halfY = SIM_H / 2;
+    if (owner === 'player' && placement.y < halfY) return false;
+    if (owner === 'enemy'  && placement.y >= halfY) return false;
+
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
     ps.generators.push({
       uid: newUid(), defId: def.id,
       hp: def.hp ?? 3, maxHp: def.hp ?? 3,
       attack: 0, hasAttacked: false, owner,
-      simX: placement?.x,
-      simY: placement?.y,
+      simX: placement.x,
+      simY: placement.y,
     });
-    gs.combatLog.push(`${label} places ${def.name} (generator).`);
+    gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
     ps.discard.push(card);
     return true;
   }
@@ -180,6 +196,9 @@ export function attackTarget(
   } else {
     return false;
   }
+
+  // Range check — prevents attacks across the whole field before creatures close in.
+  if (dist(sourcePos, targetPos) > MAX_ATTACK_RANGE) return false;
 
   const def = CARD_DEFS[attacker.defId];
   attacker.hasAttacked = true;

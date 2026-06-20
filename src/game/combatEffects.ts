@@ -36,7 +36,7 @@ export function enqueueEffect(
 ): void {
   const kind = elementToEffectKind(element);
   const effect: CombatEffect = {
-    id: newEffectId(),
+    id: newEffectId(gs),
     owner,
     element,
     effectKind: kind,

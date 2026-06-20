@@ -305,10 +305,159 @@ and attacks (in `rules.ts`) remains the primary damage source.
 
 ---
 
-### Next recommended phase
+---
 
-**Phase 5: Creature movement & replay**
+## Phase 5: Deterministic Replay Foundation & Creature Movement (completed)
 
-1. Add per-tick deterministic creature drift toward the enemy base (simX/simY updated each tick).
-2. Add a `WALL` particle type for card-placed structures that block projectiles.
-3. Write `getCommandLog()` to `localStorage` on game end; add a `?replay=` loader.
+---
+
+### Determinism gap fixes
+
+#### GameState-owned effect ID counter (`src/game/types.ts`, `src/game/state.ts`)
+
+- `GameState.nextEffectId: number` replaces the old module-level `_effectId` counter in `state.ts`.
+- `newEffectId(gs)` takes `gs` and increments `gs.nextEffectId`.
+- `gs.nextEffectId` is included in the state hash — desync from divergent effect ID sequences is now detectable.
+- `CombatEffect.owner` is now included in the state hash (it was previously hashed without the owner field).
+
+#### UID counter reset for replay (`src/game/state.ts`)
+
+- `resetUidCounter()` resets the module-level `_uid` counter to 0.
+- `createInitialGameState()` calls `resetUidCounter()` internally so every fresh game assigns UIDs from 1 in the same order.
+- This makes replay verification produce identical UIDs without requiring `nextUid` to be moved into `GameState`.
+
+---
+
+### Command tick validation (`src/game/commands.ts`)
+
+- `validate(gs, cmd, skipTickCheck)` rejects turn-sensitive commands where `cmd.tick !== gs.tick`.
+- Commands issued by the UI and AI always carry `tick: gs.tick` at creation time, so live play is unaffected.
+- `applyCommand(gs, cmd, skipTickCheck = false)` exposes `skipTickCheck` for the replay runner: the runner advances `gs.tick` to `cmd.tick` before applying each command, then passes `skipTickCheck = true`.
+- Rejected commands record the reason in `_rejectedLog` as before.
+
+#### Tick policy
+
+For local hotseat:
+- Accepted only when `cmd.tick === gs.tick` at the moment `applyCommand` is called.
+- AI commands are constructed with `tick: gs.tick` in `computeNextAICommand`, so they always pass.
+- Player UI commands are constructed with `tick: gs.tick` at event time, so they always pass.
+
+For replay:
+- The replay runner fast-forwards the sim to `cmd.tick`, then applies with `skipTickCheck = true`.
+- This means the same command log is valid both live and in replay without tick-renumbering.
+
+---
+
+### Generator placement requirement (`src/game/rules.ts`)
+
+- `playCard` for `GENERATOR` now requires a `placement` field (same as `CREATURE`).
+- Placement is validated for side: player generators must be in the lower half (`y >= SIM_H/2`); enemy in the upper half (`y < SIM_H/2`).
+- Missing or side-invalid generator placement returns `false` without mutating state.
+- Starting generators are placed directly via `makePlayerState` in `state.ts` — they bypass `playCard` so this requirement does not affect game initialization.
+- AI generator placement already included `placement` coordinates — no AI changes needed.
+
+---
+
+### Deterministic creature movement (`src/game/movement.ts`)
+
+`updateCreatureMovement(gs)` is called once per fixed tick (between `updateCombatEffects` and `updateSim`).
+
+#### Movement rules
+
+- Player creatures march upward (`simY--`) toward the enemy base.
+- Enemy creatures march downward (`simY++`) toward the player base.
+- Movement uses modular arithmetic on `gs.tick` — no floating-point accumulator.
+
+#### Speed table
+
+| Creature    | Element | Ticks per pixel step |
+|-------------|---------|----------------------|
+| Emberling   | FIRE    | 3 (fast)             |
+| Water Wisp  | WATER   | 4 (medium / glides)  |
+| Stone Mite  | EARTH   | 6 (slow)             |
+| fallback    | NEUTRAL | 5                    |
+
+#### Boundaries
+
+- Player creatures clamp at `simY >= 4`.
+- Enemy creatures clamp at `simY <= SIM_H - 5`.
+- Creatures do not clamp in X during normal movement.
+
+#### Collision separation
+
+After all movement, a deterministic separation pass prevents stacking:
+- O(n²) over same-team creature pairs within Chebyshev radius 8.
+- Overlapping pair: the unit whose UID string sorts earlier moves left (x−1); the other moves right (x+1).
+- UID string comparison is deterministic across machines and sessions.
+- Both units are clamped to `[0, SIM_W - 1]`.
+
+Because `simX/simY` are already in the state hash, movement and separation are automatically hashed.
+
+---
+
+### Attack range validation (`src/game/rules.ts`)
+
+- `attackTarget` rejects attacks where the Chebyshev distance between attacker and target exceeds `MAX_ATTACK_RANGE = 160`.
+- Uses integer Chebyshev distance (`max(|dx|, |dy|)`) — no floating-point.
+- Creatures must advance toward the enemy before their attacks become valid.
+- AI already selects targets by UID without range awareness; because AI creatures move like player creatures, they will naturally be in range when they attack.
+
+---
+
+### Replay / localStorage (`src/game/replay.ts`)
+
+#### Format (version `deckadent-replay-v1`)
+
+```typescript
+interface ReplayRecord {
+  version: string;      // schema version tag
+  timestamp: number;    // Unix ms — cosmetic only
+  initialSeed: number;  // passed to createInitialGameState
+  commands: Command[];  // full accepted command log in order
+  finalHash: string;    // hashHex(gs) at game end
+  outcome: string;      // 'win' | 'lose'
+}
+```
+
+Stored under `localStorage['deckadent-latest-replay']`.
+
+#### Save
+
+`saveReplay(gs)` is called once in `main.ts` when `gs.status` transitions out of `'playing'`.
+
+#### Load & verify
+
+`loadLatestReplay()` retrieves and version-checks the record.
+
+`verifyReplay(record)` re-simulates from scratch:
+1. `resetUidCounter()` then `createInitialGameState(initialSeed)`.
+2. For each command, fast-forward `gs.tick` to `cmd.tick`, then `applyCommand(gs, cmd, skipTickCheck=true)`.
+3. Compare `hashHex(gs)` to `record.finalHash`.
+
+To run verification: open the game with `?replay=latest` in the URL. Results are logged to the browser console.
+
+---
+
+### Dev/debug panel (`src/main.ts`)
+
+A compact one-liner overlaid at the bottom of the battle canvas (always visible).
+
+Displays:
+- `seed` — initial seed in hex
+- `tick` — current `gs.tick`
+- `hash` — current `hashHex(gs)` (8 hex chars)
+- `fx` — active `gs.combatEffects.length`
+- `cmds` — accepted / rejected command counts
+
+Updated each frame after each tick batch completes.
+
+---
+
+### Current limitations (Phase 5)
+
+- **No WALL particle.** Card-placed structures that block projectiles are deferred.
+- **No networking.** Hotseat only. Commands are logged to localStorage (replay) but not sent over the network.
+- **Single replay slot.** `localStorage` holds only the latest game. A replay history requires a different storage model.
+- **UID counter is module-level.** `_uid` in `state.ts` is reset by `createInitialGameState`, which means running two game instances in the same JS context (e.g., iframe) would share the counter. Acceptable for the current single-page hotseat model.
+- **CORE erosion rate is conservative.** May need tuning now that creatures advance across the field.
+- **No creature–creature collision between teams.** Creatures from opposite teams can still pass through each other.

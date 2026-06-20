@@ -132,4 +132,10 @@ export interface GameState {
   sim: SimState;
   /** Active combat effects being resolved into the sim each tick. Authoritative. */
   combatEffects: CombatEffect[];
+  /**
+   * Monotonically increasing counter for assigning CombatEffect IDs.
+   * Owned by GameState so effect IDs are deterministic and replay-stable.
+   * Included in the state hash.
+   */
+  nextEffectId: number;
 }

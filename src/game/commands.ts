@@ -59,10 +59,17 @@ const TURN_SENSITIVE: Command['kind'][] = ['playCard', 'attackTarget', 'endTurn'
 /** The opponent of a given owner. */
 function opponent(o: Owner): Owner { return o === 'player' ? 'enemy' : 'player'; }
 
-function validate(gs: GameState, cmd: Command): string | null {
+function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | null {
   if (gs.status !== 'playing') return 'game is over';
   if (TURN_SENSITIVE.includes(cmd.kind) && cmd.owner !== gs.turn) {
     return `not ${cmd.owner}'s turn (active: ${gs.turn})`;
+  }
+  // Tick validation: commands must be issued for the current tick.
+  // This catches stale commands re-applied after the sim has advanced.
+  // Replay runs advance gs.tick to cmd.tick before calling applyCommand,
+  // so this check is still correct during verified replay.
+  if (!skipTickCheck && TURN_SENSITIVE.includes(cmd.kind) && cmd.tick !== gs.tick) {
+    return `stale command: tick ${cmd.tick} != current tick ${gs.tick}`;
   }
 
   if (cmd.kind === 'playCard' && cmd.placement) {
@@ -110,8 +117,8 @@ function validate(gs: GameState, cmd: Command): string | null {
 // Validates the command before applying it. Rejected commands are pushed to
 // _rejectedLog and not applied. Only accepted commands go into _commandLog.
 // ---------------------------------------------------------------------------
-export function applyCommand(gs: GameState, cmd: Command): boolean {
-  const err = validate(gs, cmd);
+export function applyCommand(gs: GameState, cmd: Command, skipTickCheck = false): boolean {
+  const err = validate(gs, cmd, skipTickCheck);
   if (err !== null) {
     _rejectedLog.push({ cmd, reason: err });
     return false;
