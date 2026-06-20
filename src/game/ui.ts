@@ -340,19 +340,22 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     const isPlacingGen       = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
     const isPlacingCreature  = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
     const isPlacingStructure = gs.phase === 'placing-structure' && !!gs.pendingStructureCardUid;
-    if (!isPlacingGen && !isPlacingCreature && !isPlacingStructure) return;
+    const isTargetingSpell   = gs.phase === 'targeting-spell' && !!gs.pendingSpellCardUid;
+    if (!isPlacingGen && !isPlacingCreature && !isPlacingStructure && !isTargetingSpell) return;
 
     const rect = _canvas.getBoundingClientRect();
     const x = Math.max(0, Math.min(_canvas.width - 1,  Math.round(((e.clientX - rect.left) / rect.width)  * _canvas.width)));
     const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height)));
 
-    const cardUid = isPlacingGen ? gs.pendingGeneratorCardUid!
+    const cardUid = isTargetingSpell ? gs.pendingSpellCardUid!
+                  : isPlacingGen ? gs.pendingGeneratorCardUid!
                   : isPlacingCreature ? gs.pendingCreatureCardUid!
                   : gs.pendingStructureCardUid!;
     const ok = applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
 
     // Only clear placement state on success — rejected placements keep the phase active.
     if (ok) {
+      gs.pendingSpellCardUid = null;
       gs.pendingGeneratorCardUid = null;
       gs.pendingCreatureCardUid = null;
       gs.pendingStructureCardUid = null;

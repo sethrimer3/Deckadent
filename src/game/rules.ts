@@ -194,11 +194,12 @@ export function playCard(
 
   // ── SPELL ──────────────────────────────────────────────────────────────────
   if (def.type === 'SPELL') {
-    // Must have exactly one of: targetUid or targetBase.
+    // A spell can target one unit, one opposing base, or an open battlefield point.
     const hasUnit = !!targetUid;
     const hasBase = !!targetBase;
-    if (!hasUnit && !hasBase) return false;
-    if (hasUnit && hasBase) return false;
+    const hasPoint = !!placement;
+    if (!hasUnit && !hasBase && !hasPoint) return false;
+    if ((hasUnit ? 1 : 0) + (hasBase ? 1 : 0) + (hasPoint ? 1 : 0) !== 1) return false;
 
     let targetPos: { x: number; y: number };
     let targetName: string;
@@ -208,12 +209,15 @@ export function playCard(
       if (!target) return false;
       targetPos = unitPos(target, SIM_W / 2, SIM_H / 2);
       targetName = CARD_DEFS[target.defId].name;
-    } else {
+    } else if (hasBase) {
       // targetBase must be opponent's base
       if (targetBase !== (owner === 'player' ? 'enemy' : 'player')) return false;
       const base = targetBase === 'player' ? gs.player.base : gs.enemy.base;
       targetPos = { x: base.simX, y: base.simY };
       targetName = `${targetBase} base`;
+    } else {
+      targetPos = placement!;
+      targetName = `battlefield (${targetPos.x},${targetPos.y})`;
     }
 
     // Source position: spell comes from the caster's base or midfield
