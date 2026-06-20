@@ -65,6 +65,7 @@ export interface CardDef {
   attack?: number;
   rulesText: string;
   effectKey: string;
+  collisionEnergy?: number;
   spellDamage?: number;
   /** For STRUCTURE cards: which shape helper to apply at placement. */
   structureShape?: string;
@@ -89,6 +90,8 @@ export interface UnitInstance {
   owner: Owner;
   simX?: number;
   simY?: number;
+  collisionEnergy?: number;
+  maxCollisionEnergy?: number;
 }
 
 export interface BaseInstance {

@@ -31,7 +31,8 @@ export const CARD_DEFS: Record<string, CardDef> = {
     element: 'FIRE',
     hp: 3,
     attack: 1,
-    rulesText: 'Advances toward enemy base each tick. Attack: launches a fire spray toward target.',
+    collisionEnergy: 3,
+    rulesText: 'Advances toward enemy base. On a structure, explodes to burn sand nearby. Dissipates after 3 collisions.',
     effectKey: 'fire_spray',
   },
   water_wisp: {
@@ -42,7 +43,8 @@ export const CARD_DEFS: Record<string, CardDef> = {
     element: 'WATER',
     hp: 3,
     attack: 1,
-    rulesText: 'Glides toward enemy base. Attack: fires a water beam that extinguishes fire.',
+    collisionEnergy: 4,
+    rulesText: 'Glides toward enemy base. On a structure, emits a cutting water beam. Dissipates after 4 collisions.',
     effectKey: 'water_beam',
   },
   stone_mite: {
@@ -53,7 +55,8 @@ export const CARD_DEFS: Record<string, CardDef> = {
     element: 'EARTH',
     hp: 5,
     attack: 1,
-    rulesText: 'Slow crawler toward enemy base. Attack: drops sand from above onto target.',
+    collisionEnergy: 5,
+    rulesText: 'Slow crawler toward enemy base. On a structure, delivers a crushing sand impact. Dissipates after 5 collisions.',
     effectKey: 'sand_burst',
   },
   splash: {

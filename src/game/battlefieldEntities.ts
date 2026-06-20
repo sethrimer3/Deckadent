@@ -128,6 +128,9 @@ function drawCreature(ctx: CanvasRenderingContext2D, unit: UnitInstance): void {
   // HP bar above for enemy units, below for player units (so it faces battlefield center).
   const above = unit.owner === 'enemy';
   drawHpBar(ctx, cx, cy, unit.hp, unit.maxHp, above);
+  if (unit.maxCollisionEnergy !== undefined && unit.collisionEnergy !== undefined) {
+    drawHpBar(ctx, cx, cy + (above ? 5 : -5), unit.collisionEnergy, unit.maxCollisionEnergy, above);
+  }
 }
 
 /** Render all creature bodies for both players onto the sim canvas. */

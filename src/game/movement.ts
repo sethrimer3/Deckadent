@@ -1,5 +1,6 @@
 import type { GameState, Owner, UnitInstance } from './types';
-import { SIM_W, SIM_H } from './sandSim';
+import { addParticle, SIM_W, SIM_H } from './sandSim';
+import { CARD_DEFS } from './cards';
 
 // ---------------------------------------------------------------------------
 // Deterministic creature movement system.
@@ -56,7 +57,46 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 /** Move a single creature one step if the tick modulus matches its speed. */
-function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: number, dy: number): void {
+function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number): void {
+  if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) return;
+  const idx = y * gs.sim.width + x;
+  const cell = gs.sim.grid[idx];
+  if (cell.type !== 'WALL' || cell.owner === owner) return;
+  cell.lifetime -= damage;
+  if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+}
+
+function triggerCollisionEffect(gs: GameState, unit: UnitInstance, owner: Owner, x: number, y: number, dy: 1 | -1): void {
+  switch (CARD_DEFS[unit.defId].element) {
+    case 'FIRE':
+      for (let oy = -4; oy <= 4; oy++) for (let ox = -4; ox <= 4; ox++) {
+        if (ox * ox + oy * oy > 16) continue;
+        const px = x + ox, py = y + oy;
+        if (px < 0 || px >= gs.sim.width || py < 0 || py >= gs.sim.height) continue;
+        const cell = gs.sim.grid[py * gs.sim.width + px];
+        if (cell.type === 'SAND') gs.sim.grid[py * gs.sim.width + px] = { type: 'EMPTY', lifetime: 0 };
+        else if (cell.type === 'EMPTY') addParticle(gs.sim, px, py, 'FIRE');
+      }
+      damageOpposingWall(gs, owner, x, y, 1);
+      break;
+    case 'WATER':
+      for (let distance = 0; distance < 9; distance++) {
+        const py = y + dy * distance;
+        if (py < 0 || py >= gs.sim.height) break;
+        damageOpposingWall(gs, owner, x, py, 1);
+        if (gs.sim.grid[py * gs.sim.width + x].type === 'EMPTY') addParticle(gs.sim, x, py, 'WATER', dy);
+      }
+      break;
+    case 'EARTH':
+      damageOpposingWall(gs, owner, x, y, 2);
+      for (let ox = -2; ox <= 2; ox++) addParticle(gs.sim, x + ox, y - dy, 'SAND', dy);
+      break;
+    default:
+      damageOpposingWall(gs, owner, x, y, 1);
+  }
+}
+
+function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: number, dy: 1 | -1): void {
   if (unit.simX === undefined || unit.simY === undefined) return;
   const speed = speedFor(unit.defId);
   if (tick % speed !== 0) return;
@@ -70,12 +110,9 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   // Friendly structures block movement but are never damaged by their summons.
   if (wall.owner === owner) return;
 
-  // A summon attacks an opposing structure cell while blocked by it.
-  wall.lifetime -= Math.max(1, unit.attack);
-  if (wall.lifetime <= 0) {
-    gs.sim.grid[nextY * gs.sim.width + unit.simX] = { type: 'EMPTY', lifetime: 0 };
-    gs.combatLog.push(`${unit.uid} destroys an opposing structure cell.`);
-  }
+  triggerCollisionEffect(gs, unit, owner, unit.simX, nextY, dy);
+  unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
+  if (unit.collisionEnergy === 0) unit.hp = 0;
 }
 
 /**
@@ -118,6 +155,12 @@ export function updateCreatureMovement(gs: GameState): void {
   for (const unit of gs.player.creatures) stepCreature(gs, unit, 'player', tick, -1);
   // Enemy creatures march downward (dy = +1).
   for (const unit of gs.enemy.creatures) stepCreature(gs, unit, 'enemy', tick, +1);
+
+  for (const ps of [gs.player, gs.enemy]) {
+    const exhausted = ps.creatures.filter(unit => unit.hp <= 0 && unit.collisionEnergy === 0);
+    for (const unit of exhausted) gs.combatLog.push(`${CARD_DEFS[unit.defId].name} dissipates after exhausting its collision energy.`);
+    ps.creatures = ps.creatures.filter(unit => unit.hp > 0);
+  }
 
   // Separate overlapping units within each team.
   separateTeam(gs.player.creatures);

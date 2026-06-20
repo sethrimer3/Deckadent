@@ -39,6 +39,7 @@ function makeCard(defId: string): CardInstance {
 
 function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): UnitInstance {
   const def = CARD_DEFS[defId];
+  const collisionEnergy = def.collisionEnergy;
   return {
     uid: newUid(),
     defId,
@@ -49,6 +50,8 @@ function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): Un
     owner,
     simX,
     simY,
+    collisionEnergy,
+    maxCollisionEnergy: collisionEnergy,
   };
 }
 

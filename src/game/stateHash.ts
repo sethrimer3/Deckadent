@@ -71,7 +71,7 @@ function hashPlayerState(h: number, ps: PlayerState): number {
   hashCardList(ps.hand);
   hashCardList(ps.discard);
 
-  const hashUnits = (units: { uid: string; defId: string; hp: number; hasAttacked: boolean; simX?: number; simY?: number }[]) => {
+  const hashUnits = (units: { uid: string; defId: string; hp: number; hasAttacked: boolean; simX?: number; simY?: number; collisionEnergy?: number; maxCollisionEnergy?: number }[]) => {
     h = djb2Update(h, units.length);
     for (const u of units) {
       h = hashString(h, u.uid);
@@ -80,6 +80,8 @@ function hashPlayerState(h: number, ps: PlayerState): number {
       h = djb2Update(h, u.hasAttacked ? 1 : 0);
       h = djb2Update(h, (u.simX ?? 0xffff) | 0);
       h = djb2Update(h, (u.simY ?? 0xffff) | 0);
+      h = djb2Update(h, (u.collisionEnergy ?? 0xffff) | 0);
+      h = djb2Update(h, (u.maxCollisionEnergy ?? 0xffff) | 0);
     }
   };
   hashUnits(ps.generators);
