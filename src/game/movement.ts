@@ -1,6 +1,7 @@
-import type { GameState, Owner, UnitInstance } from './types';
+import type { BaseInstance, GameState, Owner, UnitInstance } from './types';
 import { addParticle, SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
+import { countCoreCells } from './state';
 
 // ---------------------------------------------------------------------------
 // Deterministic creature movement system.
@@ -48,6 +49,7 @@ const MOVE_Y_MAX = SIM_H - 5;
 /** Radius used for separation checks (Chebyshev distance). */
 const SEPARATION_RADIUS = 8;
 const GENERATOR_COLLISION_RADIUS = 12;
+const BASE_COLLISION_RADIUS = 14;
 
 function speedFor(defId: string): number {
   return MOVE_SPEED[defId] ?? MOVE_SPEED_DEFAULT;
@@ -104,6 +106,22 @@ function findGeneratorContact(
   return null;
 }
 
+function findBaseContact(
+  gs: GameState,
+  unit: UnitInstance,
+  owner: Owner,
+  nextY: number,
+  dy: 1 | -1,
+): BaseInstance | null {
+  if (unit.simX === undefined || unit.simY === undefined) return null;
+  const { halfWidth, leadingExtent } = collisionProfile(unit.defId);
+  const base = owner === 'player' ? gs.enemy.base : gs.player.base;
+  const isAhead = (base.simY - unit.simY) * dy > 0;
+  const overlapsX = Math.abs(base.simX - unit.simX) <= BASE_COLLISION_RADIUS + halfWidth;
+  const overlapsY = Math.abs(base.simY - nextY) <= BASE_COLLISION_RADIUS + leadingExtent;
+  return isAhead && overlapsX && overlapsY ? base : null;
+}
+
 /** Move a single creature one step if the tick modulus matches its speed. */
 function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number): void {
   if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) return;
@@ -118,6 +136,29 @@ function damageGenerator(generator: UnitInstance | null, amount: number): void {
   if (generator) generator.hp -= amount;
 }
 
+function damageBaseCore(gs: GameState, base: BaseInstance | null, amount: number): void {
+  if (!base) return;
+  let remaining = amount;
+  for (let radius = 0; radius <= 5 && remaining > 0; radius++) {
+    for (let dy = -radius; dy <= radius && remaining > 0; dy++) {
+      for (let dx = -radius; dx <= radius && remaining > 0; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        const x = base.simX + dx, y = base.simY + dy;
+        if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) continue;
+        const idx = y * gs.sim.width + x;
+        if (gs.sim.grid[idx].type !== 'CORE') continue;
+        gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+        remaining--;
+      }
+    }
+  }
+  base.hp = countCoreCells(gs.sim, base);
+  if (base.hp === 0 && gs.status === 'playing') {
+    gs.status = base.owner === 'player' ? 'lose' : 'win';
+    gs.combatLog.push(base.owner === 'player' ? 'Your base core was destroyed. You lose!' : 'Enemy base core was destroyed. You win!');
+  }
+}
+
 function triggerCollisionEffect(
   gs: GameState,
   unit: UnitInstance,
@@ -126,6 +167,7 @@ function triggerCollisionEffect(
   y: number,
   dy: 1 | -1,
   generator: UnitInstance | null = null,
+  base: BaseInstance | null = null,
 ): void {
   switch (CARD_DEFS[unit.defId].element) {
     case 'FIRE':
@@ -139,6 +181,7 @@ function triggerCollisionEffect(
       }
       damageOpposingWall(gs, owner, x, y, 1);
       damageGenerator(generator, 1);
+      damageBaseCore(gs, base, 1);
       break;
     case 'WATER':
       for (let distance = 0; distance < 9; distance++) {
@@ -148,15 +191,18 @@ function triggerCollisionEffect(
         if (gs.sim.grid[py * gs.sim.width + x].type === 'EMPTY') addParticle(gs.sim, x, py, 'WATER', dy);
       }
       damageGenerator(generator, 1);
+      damageBaseCore(gs, base, 1);
       break;
     case 'EARTH':
       damageOpposingWall(gs, owner, x, y, 2);
       for (let ox = -2; ox <= 2; ox++) addParticle(gs.sim, x + ox, y - dy, 'SAND', dy);
       damageGenerator(generator, 2);
+      damageBaseCore(gs, base, 2);
       break;
     default:
       damageOpposingWall(gs, owner, x, y, 1);
       damageGenerator(generator, 1);
+      damageBaseCore(gs, base, 1);
   }
 }
 
@@ -167,7 +213,8 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
   const contact = findWallContact(gs, unit, nextY, dy);
   const generator = contact ? null : findGeneratorContact(gs, unit, owner, nextY, dy);
-  if (!contact && !generator) {
+  const base = contact || generator ? null : findBaseContact(gs, unit, owner, nextY, dy);
+  if (!contact && !generator && !base) {
     unit.simY = nextY;
     return;
   }
@@ -180,9 +227,9 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   // is removed by another effect.
   if (unit.maxCollisionEnergy === undefined) return;
 
-  const targetX = contact?.x ?? generator!.simX!;
-  const targetY = contact?.y ?? generator!.simY!;
-  triggerCollisionEffect(gs, unit, owner, targetX, targetY, dy, generator);
+  const targetX = contact?.x ?? generator?.simX ?? base!.simX;
+  const targetY = contact?.y ?? generator?.simY ?? base!.simY;
+  triggerCollisionEffect(gs, unit, owner, targetX, targetY, dy, generator, base);
   unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
   if (unit.collisionEnergy === 0) unit.hp = 0;
 }
