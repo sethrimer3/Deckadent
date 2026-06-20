@@ -106,6 +106,20 @@ function placeCoreAtBase(sim: SimState, base: BaseInstance): void {
   }
 }
 
+/** Solid simulation shell matching the visible fortress boundary. */
+function placeBaseShell(sim: SimState, base: BaseInstance): void {
+  const hw = 14, hh = 8;
+  for (let dy = -hh; dy <= hh; dy++) {
+    for (let dx = -hw; dx <= hw; dx++) {
+      if (Math.abs(dx) !== hw && Math.abs(dy) !== hh) continue;
+      const x = base.simX + dx, y = base.simY + dy;
+      if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
+      const idx = y * sim.width + x;
+      if (sim.grid[idx].type === 'EMPTY') sim.grid[idx] = { type: 'WALL', lifetime: 999, owner: base.owner };
+    }
+  }
+}
+
 function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): PlayerState {
   const deck = shuffle(deckIds.map(makeCard), prng);
   const hand = deck.splice(0, 5);
@@ -147,6 +161,8 @@ export function createInitialGameState(seed?: number): GameState {
   // Place core cells into the sim grid before any game action.
   placeCoreAtBase(sim, player.base);
   placeCoreAtBase(sim, enemy.base);
+  placeBaseShell(sim, player.base);
+  placeBaseShell(sim, enemy.base);
 
   return {
     player,

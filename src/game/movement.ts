@@ -48,7 +48,8 @@ const MOVE_Y_MAX = SIM_H - 5;
 
 /** Radius used for separation checks (Chebyshev distance). */
 const SEPARATION_RADIUS = 8;
-const GENERATOR_COLLISION_RADIUS = 12;
+const GENERATOR_COLLISION_HALF_WIDTH = 12;
+const GENERATOR_COLLISION_HALF_HEIGHT = 1;
 const BASE_COLLISION_RADIUS = 14;
 
 function speedFor(defId: string): number {
@@ -97,8 +98,8 @@ function findGeneratorContact(
   for (const generator of [...gs.player.generators, ...gs.enemy.generators]) {
     if (generator.simX === undefined || generator.simY === undefined) continue;
     const isAhead = (generator.simY - unit.simY) * dy > 0;
-    const overlapsX = Math.abs(generator.simX - unit.simX) <= GENERATOR_COLLISION_RADIUS + halfWidth;
-    const overlapsY = Math.abs(generator.simY - nextY) <= GENERATOR_COLLISION_RADIUS + leadingExtent;
+    const overlapsX = Math.abs(generator.simX - unit.simX) <= GENERATOR_COLLISION_HALF_WIDTH + halfWidth;
+    const overlapsY = Math.abs(generator.simY - nextY) <= GENERATOR_COLLISION_HALF_HEIGHT + leadingExtent;
     if (isAhead && overlapsX && overlapsY) return generator;
   }
   return null;
@@ -227,7 +228,14 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
   const contact = findWallContact(gs, unit, nextY, dy);
   const generator = contact ? null : findGeneratorContact(gs, unit, nextY, dy);
-  const base = contact || generator ? null : findBaseContact(gs, unit, owner, nextY, dy);
+  let base = contact || generator ? null : findBaseContact(gs, unit, owner, nextY, dy);
+  if (contact && gs.sim.grid[contact.y * gs.sim.width + contact.x].lifetime >= 999) {
+    base = [gs.player.base, gs.enemy.base].find(candidate =>
+      candidate.owner === gs.sim.grid[contact.y * gs.sim.width + contact.x].owner
+      && Math.abs(candidate.simX - contact.x) <= BASE_COLLISION_RADIUS
+      && Math.abs(candidate.simY - contact.y) <= BASE_COLLISION_RADIUS
+    ) ?? null;
+  }
   const creature = contact || generator || base ? null : findCreatureContact(gs, unit, nextY, dy);
   if (!contact && !generator && !base && !creature) {
     unit.simY = nextY;
