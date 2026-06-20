@@ -14,7 +14,8 @@ import type { Owner, SimState } from './types';
 //     flying particles, so structures are physically meaningful.
 // ---------------------------------------------------------------------------
 
-const WALL_DURABILITY = 3;
+// Each wall cell is one physical structure particle; a direct collision removes it.
+const WALL_DURABILITY = 1;
 
 function setWall(sim: SimState, x: number, y: number, owner: Owner): void {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;

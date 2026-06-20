@@ -151,6 +151,10 @@ function damageGenerator(generator: UnitInstance | null, amount: number): void {
   if (generator) generator.hp -= amount;
 }
 
+function damageCreature(creature: UnitInstance | null, amount: number): void {
+  if (creature) creature.hp -= amount;
+}
+
 function damageBaseCore(gs: GameState, base: BaseInstance | null, amount: number): void {
   if (!base) return;
   let remaining = amount;
@@ -183,6 +187,7 @@ function triggerCollisionEffect(
   dy: 1 | -1,
   generator: UnitInstance | null = null,
   base: BaseInstance | null = null,
+  creature: UnitInstance | null = null,
 ): void {
   switch (CARD_DEFS[unit.defId].element) {
     case 'FIRE':
@@ -197,6 +202,7 @@ function triggerCollisionEffect(
       damageOpposingWall(gs, owner, x, y, 1);
       damageGenerator(generator, 1);
       damageBaseCore(gs, base, 1);
+      damageCreature(creature, 1);
       break;
     case 'WATER':
       for (let distance = 0; distance < 9; distance++) {
@@ -207,17 +213,20 @@ function triggerCollisionEffect(
       }
       damageGenerator(generator, 1);
       damageBaseCore(gs, base, 1);
+      damageCreature(creature, 1);
       break;
     case 'EARTH':
       damageOpposingWall(gs, owner, x, y, 2);
       for (let ox = -2; ox <= 2; ox++) addParticle(gs.sim, x + ox, y - dy, 'SAND', dy);
       damageGenerator(generator, 2);
       damageBaseCore(gs, base, 2);
+      damageCreature(creature, 2);
       break;
     default:
       damageOpposingWall(gs, owner, x, y, 1);
       damageGenerator(generator, 1);
       damageBaseCore(gs, base, 1);
+      damageCreature(creature, 1);
   }
 }
 
@@ -244,15 +253,15 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   const wall = contact ? gs.sim.grid[contact.y * gs.sim.width + contact.x] : null;
 
   // Friendly structures block movement but are never damaged by their summons.
-  if (wall?.owner === owner || generator?.owner === owner || base?.owner === owner || creature) return;
+  if (wall?.owner === owner || generator?.owner === owner || base?.owner === owner || creature?.owner === owner) return;
 
   // Summons without a dedicated collision effect remain blocked until the cell
   // is removed by another effect.
   if (unit.maxCollisionEnergy === undefined) return;
 
-  const targetX = contact?.x ?? generator?.simX ?? base!.simX;
-  const targetY = contact?.y ?? generator?.simY ?? base!.simY;
-  triggerCollisionEffect(gs, unit, owner, targetX, targetY, dy, generator, base);
+  const targetX = contact?.x ?? generator?.simX ?? base?.simX ?? creature!.simX!;
+  const targetY = contact?.y ?? generator?.simY ?? base?.simY ?? creature!.simY!;
+  triggerCollisionEffect(gs, unit, owner, targetX, targetY, dy, generator, base, creature);
   unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
   if (unit.collisionEnergy === 0) unit.hp = 0;
 }

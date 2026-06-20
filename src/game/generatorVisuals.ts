@@ -1,6 +1,7 @@
 import { CARD_DEFS } from './cards';
 import { SIM_H, SIM_W } from './sandSim';
 import type { GameState, UnitInstance, BaseInstance, Owner } from './types';
+import { isGeneratorOperational } from './state';
 
 // ─── Shared colours ───────────────────────────────────────────────────────────
 
@@ -107,7 +108,10 @@ function pixelsForGenerator(unit: UnitInstance): Pixel[] {
     : unit.defId === 'spark_core'
       ? mountainPixels(core)
       : domePixels(core);
-  return unit.hp > 0 ? addGoldOutline(base) : base;
+  const remainingCount = Math.max(1, Math.ceil(base.length * Math.max(0, unit.hp / unit.maxHp)));
+  // Stable spread: damaged generators retain scattered physical pixels instead of vanishing whole.
+  const remaining = base.filter((_, index) => (index * 17) % base.length < remainingCount);
+  return isGeneratorOperational(unit) ? addGoldOutline(remaining) : remaining;
 }
 
 function drawGenerator(

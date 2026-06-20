@@ -106,6 +106,11 @@ function placeCoreAtBase(sim: SimState, base: BaseInstance): void {
   }
 }
 
+/** A generator becomes inert after losing more than 40% of its physical particles. */
+export function isGeneratorOperational(unit: UnitInstance): boolean {
+  return unit.hp > 0 && unit.hp / unit.maxHp >= 0.6;
+}
+
 /** Solid simulation shell matching the visible fortress boundary. */
 function placeBaseShell(sim: SimState, base: BaseInstance): void {
   const hw = 14, hh = 8;
@@ -202,7 +207,7 @@ export function drawCard(ps: PlayerState, prng: PRNGState): void {
 
 export function startTurn(gs: GameState): void {
   const ps = gs.turn === 'player' ? gs.player : gs.enemy;
-  ps.energy = ps.generators.length;
+  ps.energy = ps.generators.filter(isGeneratorOperational).length;
   for (const c of ps.creatures) c.hasAttacked = false;
   drawCard(ps, gs.prng);
   gs.combatLog.push(`--- ${gs.turn === 'player' ? 'Player' : 'Enemy'} turn — Energy: ${ps.energy} ---`);
