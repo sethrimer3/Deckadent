@@ -47,6 +47,7 @@ const MOVE_Y_MAX = SIM_H - 5;
 
 /** Radius used for separation checks (Chebyshev distance). */
 const SEPARATION_RADIUS = 8;
+const GENERATOR_COLLISION_RADIUS = 12;
 
 function speedFor(defId: string): number {
   return MOVE_SPEED[defId] ?? MOVE_SPEED_DEFAULT;
@@ -83,6 +84,26 @@ function findWallContact(
   return null;
 }
 
+function findGeneratorContact(
+  gs: GameState,
+  unit: UnitInstance,
+  owner: Owner,
+  nextY: number,
+  dy: 1 | -1,
+): UnitInstance | null {
+  if (unit.simX === undefined || unit.simY === undefined) return null;
+  const { halfWidth, leadingExtent } = collisionProfile(unit.defId);
+  const opposingGenerators = owner === 'player' ? gs.enemy.generators : gs.player.generators;
+  for (const generator of opposingGenerators) {
+    if (generator.simX === undefined || generator.simY === undefined) continue;
+    const isAhead = (generator.simY - unit.simY) * dy > 0;
+    const overlapsX = Math.abs(generator.simX - unit.simX) <= GENERATOR_COLLISION_RADIUS + halfWidth;
+    const overlapsY = Math.abs(generator.simY - nextY) <= GENERATOR_COLLISION_RADIUS + leadingExtent;
+    if (isAhead && overlapsX && overlapsY) return generator;
+  }
+  return null;
+}
+
 /** Move a single creature one step if the tick modulus matches its speed. */
 function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number): void {
   if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) return;
@@ -93,7 +114,19 @@ function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, d
   if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
 }
 
-function triggerCollisionEffect(gs: GameState, unit: UnitInstance, owner: Owner, x: number, y: number, dy: 1 | -1): void {
+function damageGenerator(generator: UnitInstance | null, amount: number): void {
+  if (generator) generator.hp -= amount;
+}
+
+function triggerCollisionEffect(
+  gs: GameState,
+  unit: UnitInstance,
+  owner: Owner,
+  x: number,
+  y: number,
+  dy: 1 | -1,
+  generator: UnitInstance | null = null,
+): void {
   switch (CARD_DEFS[unit.defId].element) {
     case 'FIRE':
       for (let oy = -4; oy <= 4; oy++) for (let ox = -4; ox <= 4; ox++) {
@@ -105,6 +138,7 @@ function triggerCollisionEffect(gs: GameState, unit: UnitInstance, owner: Owner,
         else if (cell.type === 'EMPTY') addParticle(gs.sim, px, py, 'FIRE');
       }
       damageOpposingWall(gs, owner, x, y, 1);
+      damageGenerator(generator, 1);
       break;
     case 'WATER':
       for (let distance = 0; distance < 9; distance++) {
@@ -113,13 +147,16 @@ function triggerCollisionEffect(gs: GameState, unit: UnitInstance, owner: Owner,
         damageOpposingWall(gs, owner, x, py, 1);
         if (gs.sim.grid[py * gs.sim.width + x].type === 'EMPTY') addParticle(gs.sim, x, py, 'WATER', dy);
       }
+      damageGenerator(generator, 1);
       break;
     case 'EARTH':
       damageOpposingWall(gs, owner, x, y, 2);
       for (let ox = -2; ox <= 2; ox++) addParticle(gs.sim, x + ox, y - dy, 'SAND', dy);
+      damageGenerator(generator, 2);
       break;
     default:
       damageOpposingWall(gs, owner, x, y, 1);
+      damageGenerator(generator, 1);
   }
 }
 
@@ -129,20 +166,23 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   if (tick % speed !== 0) return;
   const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
   const contact = findWallContact(gs, unit, nextY, dy);
-  if (!contact) {
+  const generator = contact ? null : findGeneratorContact(gs, unit, owner, nextY, dy);
+  if (!contact && !generator) {
     unit.simY = nextY;
     return;
   }
-  const wall = gs.sim.grid[contact.y * gs.sim.width + contact.x];
+  const wall = contact ? gs.sim.grid[contact.y * gs.sim.width + contact.x] : null;
 
   // Friendly structures block movement but are never damaged by their summons.
-  if (wall.owner === owner) return;
+  if (wall?.owner === owner) return;
 
   // Summons without a dedicated collision effect remain blocked until the cell
   // is removed by another effect.
   if (unit.maxCollisionEnergy === undefined) return;
 
-  triggerCollisionEffect(gs, unit, owner, contact.x, contact.y, dy);
+  const targetX = contact?.x ?? generator!.simX!;
+  const targetY = contact?.y ?? generator!.simY!;
+  triggerCollisionEffect(gs, unit, owner, targetX, targetY, dy, generator);
   unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
   if (unit.collisionEnergy === 0) unit.hp = 0;
 }
@@ -192,6 +232,9 @@ export function updateCreatureMovement(gs: GameState): void {
     const exhausted = ps.creatures.filter(unit => unit.hp <= 0 && unit.collisionEnergy === 0);
     for (const unit of exhausted) gs.combatLog.push(`${CARD_DEFS[unit.defId].name} dissipates after exhausting its collision energy.`);
     ps.creatures = ps.creatures.filter(unit => unit.hp > 0);
+    const destroyedGenerators = ps.generators.filter(unit => unit.hp <= 0);
+    for (const unit of destroyedGenerators) gs.combatLog.push(`${CARD_DEFS[unit.defId].name} was destroyed by a summon collision.`);
+    ps.generators = ps.generators.filter(unit => unit.hp > 0);
   }
 
   // Separate overlapping units within each team.
