@@ -110,6 +110,10 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   // Friendly structures block movement but are never damaged by their summons.
   if (wall.owner === owner) return;
 
+  // Summons without a dedicated collision effect remain blocked until the cell
+  // is removed by another effect.
+  if (unit.maxCollisionEnergy === undefined) return;
+
   triggerCollisionEffect(gs, unit, owner, unit.simX, nextY, dy);
   unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
   if (unit.collisionEnergy === 0) unit.hp = 0;
