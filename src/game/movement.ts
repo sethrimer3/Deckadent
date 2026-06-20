@@ -56,6 +56,33 @@ function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+function collisionProfile(defId: string): { halfWidth: number; leadingExtent: number } {
+  switch (defId) {
+    case 'emberling': return { halfWidth: 1, leadingExtent: 3 };
+    case 'water_wisp': return { halfWidth: 2, leadingExtent: 2 };
+    case 'stone_mite': return { halfWidth: 3, leadingExtent: 1 };
+    default:           return { halfWidth: 1, leadingExtent: 1 };
+  }
+}
+
+function findWallContact(
+  gs: GameState,
+  unit: UnitInstance,
+  nextY: number,
+  dy: 1 | -1,
+): { x: number; y: number } | null {
+  if (unit.simX === undefined) return null;
+  const { halfWidth, leadingExtent } = collisionProfile(unit.defId);
+  const contactY = nextY + dy * leadingExtent;
+  if (contactY < 0 || contactY >= gs.sim.height) return null;
+  for (let dx = -halfWidth; dx <= halfWidth; dx++) {
+    const x = unit.simX + dx;
+    if (x < 0 || x >= gs.sim.width) continue;
+    if (gs.sim.grid[contactY * gs.sim.width + x].type === 'WALL') return { x, y: contactY };
+  }
+  return null;
+}
+
 /** Move a single creature one step if the tick modulus matches its speed. */
 function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number): void {
   if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) return;
@@ -101,11 +128,12 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   const speed = speedFor(unit.defId);
   if (tick % speed !== 0) return;
   const nextY = clamp(unit.simY + dy, MOVE_Y_MIN, MOVE_Y_MAX);
-  const wall = gs.sim.grid[nextY * gs.sim.width + unit.simX];
-  if (wall.type !== 'WALL') {
+  const contact = findWallContact(gs, unit, nextY, dy);
+  if (!contact) {
     unit.simY = nextY;
     return;
   }
+  const wall = gs.sim.grid[contact.y * gs.sim.width + contact.x];
 
   // Friendly structures block movement but are never damaged by their summons.
   if (wall.owner === owner) return;
@@ -114,7 +142,7 @@ function stepCreature(gs: GameState, unit: UnitInstance, owner: Owner, tick: num
   // is removed by another effect.
   if (unit.maxCollisionEnergy === undefined) return;
 
-  triggerCollisionEffect(gs, unit, owner, unit.simX, nextY, dy);
+  triggerCollisionEffect(gs, unit, owner, contact.x, contact.y, dy);
   unit.collisionEnergy = Math.max(0, (unit.collisionEnergy ?? 1) - 1);
   if (unit.collisionEnergy === 0) unit.hp = 0;
 }
