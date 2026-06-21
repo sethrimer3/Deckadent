@@ -82,7 +82,8 @@ function findWallContact(
   for (let dx = -halfWidth; dx <= halfWidth; dx++) {
     const x = unit.simX + dx;
     if (x < 0 || x >= gs.sim.width) continue;
-    if (gs.sim.grid[contactY * gs.sim.width + x].type === 'WALL') return { x, y: contactY };
+    const cType = gs.sim.grid[contactY * gs.sim.width + x].type;
+    if (cType === 'WALL' || cType === 'VINE') return { x, y: contactY };
   }
   return null;
 }
@@ -138,11 +139,18 @@ function findBaseContact(
 }
 
 /** Move a single creature one step if the tick modulus matches its speed. */
-function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number): void {
+function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, damage: number, ignite = false): void {
   if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) return;
   const idx = y * gs.sim.width + x;
   const cell = gs.sim.grid[idx];
-  if (cell.type !== 'WALL' || cell.owner === owner) return;
+  if ((cell.type !== 'WALL' && cell.type !== 'VINE') || cell.owner === owner) return;
+  if (cell.type === 'VINE') {
+    // Fire creatures ignite vine; other elements simply tear through it
+    gs.sim.grid[idx] = ignite
+      ? { type: 'FIRE', lifetime: 50, owner: cell.owner }
+      : { type: 'EMPTY', lifetime: 0 };
+    return;
+  }
   cell.lifetime -= damage;
   if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
 }
@@ -197,9 +205,10 @@ function triggerCollisionEffect(
         if (px < 0 || px >= gs.sim.width || py < 0 || py >= gs.sim.height) continue;
         const cell = gs.sim.grid[py * gs.sim.width + px];
         if (cell.type === 'SAND') gs.sim.grid[py * gs.sim.width + px] = { type: 'EMPTY', lifetime: 0 };
+        else if (cell.type === 'VINE') gs.sim.grid[py * gs.sim.width + px] = { type: 'FIRE', lifetime: 50, owner: cell.owner };
         else if (cell.type === 'EMPTY') addParticle(gs.sim, px, py, 'FIRE');
       }
-      damageOpposingWall(gs, owner, x, y, 1);
+      damageOpposingWall(gs, owner, x, y, 1, true); // ignite=true for fire creatures
       damageGenerator(generator, 1);
       damageBaseCore(gs, base, 1);
       damageCreature(creature, 1);

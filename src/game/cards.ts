@@ -89,6 +89,17 @@ export const CARD_DEFS: Record<string, CardDef> = {
     effectKey: 'sand_burst',
     spellDamage: 2,
   },
+  frost_shard: {
+    id: 'frost_shard',
+    name: 'Frost Shard',
+    type: 'SPELL',
+    cost: 2,
+    element: 'WATER',
+    effectKind: 'freeze',
+    rulesText: 'Fires a shard of ice toward target. Ice freezes nearby water, counters fire units hard.',
+    effectKey: 'freeze',
+    spellDamage: 2,
+  },
 
   // ── Structure cards ───────────────────────────────────────────────────────
   stone_wall: {
@@ -121,6 +132,16 @@ export const CARD_DEFS: Record<string, CardDef> = {
     effectKey: 'none',
     structureShape: 'firebreak',
   },
+  vine_tangle: {
+    id: 'vine_tangle',
+    name: 'Vine Tangle',
+    type: 'STRUCTURE',
+    cost: 1,
+    element: 'NEUTRAL',
+    rulesText: 'Places a dense organic vine barrier. Blocks enemy advance but ignites rapidly from fire.',
+    effectKey: 'none',
+    structureShape: 'vine_tangle',
+  },
 };
 
 export const PLAYER_STARTING_DECK: string[] = [
@@ -131,10 +152,12 @@ export const PLAYER_STARTING_DECK: string[] = [
   'stone_mite',
   'splash', 'splash',
   'ignite',
+  'frost_shard',
   'collapse',
   'stone_wall', 'stone_wall',
   'channel',
   'firebreak',
+  'vine_tangle',
 ];
 
 export const ENEMY_STARTING_DECK: string[] = [
@@ -145,5 +168,7 @@ export const ENEMY_STARTING_DECK: string[] = [
   'stone_mite',
   'splash',
   'ignite', 'ignite',
+  'frost_shard',
   'collapse',
+  'vine_tangle',
 ];

@@ -238,9 +238,10 @@ export function playCard(
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
 
-    enqueueEffect(gs, owner, def.element, sourcePos, targetPos);
+    const spellKind = def.effectKind ?? elementToEffectKind(def.element);
+    enqueueEffect(gs, owner, def.element, sourcePos, targetPos, def.effectKind);
     gs.combatLog.push(
-      `${label} casts ${def.name} → ${elementToEffectKind(def.element)} toward ${targetName}.`
+      `${label} casts ${def.name} → ${spellKind} toward ${targetName}.`
     );
     ps.discard.push(card);
     // No direct HP subtraction — damage resolves through sim particles.

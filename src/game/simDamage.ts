@@ -19,13 +19,16 @@ import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RAD
 // through this resolver after particles contact unit footprints.
 // ---------------------------------------------------------------------------
 
-const FIRE_DAMAGE_PROB        = 0.55;  // was 0.40 — more aggressive fire damage
+const FIRE_DAMAGE_PROB        = 0.55;
 const WATER_FIRE_RESIST_PROB  = 0.08;  // WATER element resists fire
 const EARTH_FIRE_RESIST_PROB  = 0.20;  // EARTH element is stonier, partial resist
 const SAND_DAMAGE_PROB        = 0.12;  // sand chips away at non-earth units
 const EARTH_SAND_DAMAGE_PROB  = 0.04;  // earth units shrug off most sand
-const CORE_FIRE_REMOVE_PROB   = 0.06;  // was 0.04 — cores erode somewhat faster
-const WALL_FIRE_REMOVE_PROB   = 0.03;  // was 0.02 — walls erode faster under fire
+const CORE_FIRE_REMOVE_PROB   = 0.06;
+const WALL_FIRE_REMOVE_PROB   = 0.03;
+// ICE counters fire — fire units take heavy frost damage, others take moderate damage
+const FIRE_ICE_DAMAGE_PROB    = 0.65;  // fire element is especially vulnerable to ice
+const OTHER_ICE_DAMAGE_PROB   = 0.15;  // non-fire units still take some frost damage
 
 // Per-uid log cooldown — throttle to one entry every ~3 seconds.
 const LOG_COOLDOWN_TICKS = 90;
@@ -59,6 +62,7 @@ function damageUnit(unit: UnitInstance, gs: GameState): void {
 
   const hotCount  = countParticlesInFootprint(sim, fp, ['FIRE', 'SPARK']);
   const sandCount = countParticlesInFootprint(sim, fp, ['SAND']);
+  const iceCount  = countParticlesInFootprint(sim, fp, ['ICE']);
 
   if (hotCount > 0 && chance(sim.prng, fireDamageProb(def.element))) {
     unit.hp--;
@@ -71,6 +75,16 @@ function damageUnit(unit: UnitInstance, gs: GameState): void {
     unit.hp--;
     if (shouldLog(unit.uid + '_sand', tick)) {
       gs.combatLog.push(`${def.name} buried under sand! (${unit.hp}/${unit.maxHp} HP)`);
+    }
+  }
+
+  // ICE is especially effective against fire-element units
+  const iceDmgProb = def.element === 'FIRE' ? FIRE_ICE_DAMAGE_PROB : OTHER_ICE_DAMAGE_PROB;
+  if (iceCount > 0 && chance(sim.prng, iceDmgProb)) {
+    unit.hp--;
+    if (shouldLog(unit.uid + '_ice', tick)) {
+      const msg = def.element === 'FIRE' ? `${def.name} frozen solid!` : `${def.name} chilled!`;
+      gs.combatLog.push(`${msg} (${unit.hp}/${unit.maxHp} HP)`);
     }
   }
 }
@@ -108,6 +122,22 @@ function erodeWallCells(gs: GameState): void {
   }
 }
 
+// Vine cells near fire convert to fire particles (handled in stepVine/stepFire),
+// but here we also do a coarser periodic sweep to catch any that slipped through.
+function erodeVineCells(gs: GameState): void {
+  const { sim } = gs;
+  for (let y = 0; y < sim.height; y++) {
+    for (let x = 0; x < sim.width; x++) {
+      const idx = y * sim.width + x;
+      if (sim.grid[idx].type !== 'VINE') continue;
+      const hotNear = countParticlesInFootprint(sim, { cx: x, cy: y, radius: 2 }, ['FIRE', 'SPARK']);
+      if (hotNear > 0 && chance(sim.prng, 0.18)) {
+        sim.grid[idx] = { type: 'FIRE', lifetime: 50, owner: sim.grid[idx].owner };
+      }
+    }
+  }
+}
+
 function syncBaseHp(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
     ps.base.hp = countCoreCells(gs.sim, ps.base);
@@ -134,6 +164,7 @@ export function resolveSimDamage(gs: GameState): void {
 
   erodeCoreCells(gs);
   erodeWallCells(gs);
+  erodeVineCells(gs);
   syncBaseHp(gs);
 
   for (const ps of [player, enemy]) {

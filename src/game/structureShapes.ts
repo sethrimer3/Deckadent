@@ -16,12 +16,21 @@ import type { Owner, SimState } from './types';
 
 // Each wall cell is one physical structure particle; a direct collision removes it.
 const WALL_DURABILITY = 1;
+// Vine cells are more resilient to physical impacts but burn easily.
+const VINE_DURABILITY = 60;
 
 function setWall(sim: SimState, x: number, y: number, owner: Owner): void {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;
   const idx = y * sim.width + x;
   if (sim.grid[idx].type === 'CORE') return; // never overwrite the base core
   sim.grid[idx] = { type: 'WALL', lifetime: WALL_DURABILITY, owner };
+}
+
+function setVine(sim: SimState, x: number, y: number, owner: Owner): void {
+  if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;
+  const idx = y * sim.width + x;
+  if (sim.grid[idx].type === 'CORE') return;
+  sim.grid[idx] = { type: 'VINE', lifetime: VINE_DURABILITY, owner };
 }
 
 // ─── Primitive shapes ─────────────────────────────────────────────────────────
@@ -78,6 +87,19 @@ export function placeFirebreak(sim: SimState, cx: number, cy: number, width: num
   }
 }
 
+/**
+ * Vine tangle: a dense wall of organic VINE cells that burns from fire.
+ * Three rows tall for good coverage, 10 cells wide.
+ */
+export function placeVineTangle(sim: SimState, cx: number, cy: number, owner: Owner = 'player'): void {
+  const half = 5;
+  for (let row = -1; row <= 1; row++) {
+    for (let i = -half; i <= half; i++) {
+      setVine(sim, cx + i, cy + row, owner);
+    }
+  }
+}
+
 // ─── Named-shape dispatch ─────────────────────────────────────────────────────
 
 /**
@@ -86,10 +108,11 @@ export function placeFirebreak(sim: SimState, cx: number, cy: number, width: num
  */
 export function applyStructureShape(sim: SimState, shape: string, cx: number, cy: number, owner: Owner = 'player'): boolean {
   switch (shape) {
-    case 'wall_line':  placeWallLine(sim, cx, cy, 12, 'horizontal', owner); return true;
-    case 'channel':    placeChannel(sim, cx, cy, 8, 6, owner);              return true;
-    case 'firebreak':  placeFirebreak(sim, cx, cy, 16, owner);              return true;
-    default:           return false;
+    case 'wall_line':   placeWallLine(sim, cx, cy, 12, 'horizontal', owner); return true;
+    case 'channel':     placeChannel(sim, cx, cy, 8, 6, owner);              return true;
+    case 'firebreak':   placeFirebreak(sim, cx, cy, 16, owner);              return true;
+    case 'vine_tangle': placeVineTangle(sim, cx, cy, owner);                 return true;
+    default:            return false;
   }
 }
 
@@ -99,10 +122,11 @@ export function applyStructureShape(sim: SimState, shape: string, cx: number, cy
  */
 export function structureRadius(shape: string): number {
   switch (shape) {
-    case 'wall_line':  return 7;
-    case 'channel':    return 6;
-    case 'firebreak':  return 9;
-    default:           return 8;
+    case 'wall_line':   return 7;
+    case 'channel':     return 6;
+    case 'firebreak':   return 9;
+    case 'vine_tangle': return 6;
+    default:            return 8;
   }
 }
 
@@ -118,7 +142,7 @@ export function canPlaceStructure(sim: SimState, cx: number, cy: number, radius:
       const x = cx + dx, y = cy + dy;
       if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
       const type = sim.grid[y * sim.width + x].type;
-      if (type === 'CORE' || type === 'WALL') return false;
+      if (type === 'CORE' || type === 'WALL' || type === 'VINE') return false;
     }
   }
   return true;

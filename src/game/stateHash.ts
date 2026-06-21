@@ -35,7 +35,7 @@ function hashString(h: number, s: string): number {
 
 // Stable numeric index for each particle type — must never change once set.
 const TYPE_INDEX: Record<ParticleType, number> = {
-  EMPTY: 0, WATER: 1, FIRE: 2, SAND: 3, SMOKE: 4, SPARK: 5, CORE: 6, WALL: 7,
+  EMPTY: 0, WATER: 1, FIRE: 2, SAND: 3, SMOKE: 4, SPARK: 5, CORE: 6, WALL: 7, ICE: 8, VINE: 9,
 };
 
 function hashSimState(h: number, sim: SimState): number {

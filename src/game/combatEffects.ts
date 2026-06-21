@@ -16,7 +16,7 @@ import { newEffectId } from './state';
 //   burst — 6  ticks: heavy sand drop above target, tapering
 // ---------------------------------------------------------------------------
 
-const DURATION: Record<EffectKind, number> = { beam: 14, spray: 12, burst: 8 };
+const DURATION: Record<EffectKind, number> = { beam: 14, spray: 12, burst: 8, freeze: 10 };
 
 export function elementToEffectKind(element: ElementType): EffectKind {
   switch (element) {
@@ -33,8 +33,9 @@ export function enqueueEffect(
   element: ElementType,
   sourcePos: { x: number; y: number },
   targetPos: { x: number; y: number },
+  kindOverride?: EffectKind,
 ): void {
-  const kind = elementToEffectKind(element);
+  const kind = kindOverride ?? elementToEffectKind(element);
   const effect: CombatEffect = {
     id: newEffectId(gs),
     owner,
@@ -93,6 +94,28 @@ function spawnBurstTick(gs: GameState, sx: number, sy: number, tx: number, ty: n
   }
 }
 
+// Freeze beam: fires ICE particles along the beam line and concentrates them at target.
+// Ice extinguishes fire, freezes water, and is especially effective vs fire-element units.
+function spawnFreezeTick(gs: GameState, sx: number, sy: number, tx: number, ty: number): void {
+  const sim = gs.sim;
+  const dx = tx - sx, dy = ty - sy;
+  const gravity: 1 | -1 = ty < sy ? -1 : 1;
+  // 4 ICE particles scattered along the beam
+  for (let k = 0; k < 4; k++) {
+    const t = simRand(sim);
+    addParticle(sim, Math.round(sx + dx * t), Math.round(sy + dy * t), 'ICE', gravity);
+  }
+  // Dense concentration at target
+  for (let k = 0; k < 3; k++) {
+    addParticle(
+      sim,
+      tx + Math.round((simRand(sim) - 0.5) * 6),
+      ty + Math.round((simRand(sim) - 0.5) * 6),
+      'ICE', gravity,
+    );
+  }
+}
+
 // ─── Main tick update ─────────────────────────────────────────────────────────
 
 /**
@@ -109,9 +132,10 @@ export function updateCombatEffects(gs: GameState): void {
     if (remaining <= 0) continue; // expired — drop it
     const { sourcePos: s, targetPos: t } = fx;
     switch (fx.effectKind) {
-      case 'beam':  spawnBeamTick(gs, s.x, s.y, t.x, t.y); break;
-      case 'spray': spawnSprayTick(gs, s.x, s.y, t.x, t.y); break;
-      case 'burst': spawnBurstTick(gs, s.x, s.y, t.x, t.y, remaining); break;
+      case 'beam':   spawnBeamTick(gs, s.x, s.y, t.x, t.y); break;
+      case 'spray':  spawnSprayTick(gs, s.x, s.y, t.x, t.y); break;
+      case 'burst':  spawnBurstTick(gs, s.x, s.y, t.x, t.y, remaining); break;
+      case 'freeze': spawnFreezeTick(gs, s.x, s.y, t.x, t.y); break;
     }
     alive.push(fx);
   }

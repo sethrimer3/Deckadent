@@ -2,13 +2,13 @@ import type { PRNGState } from './prng';
 
 export type { PRNGState };
 
-export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE' | 'WALL';
+export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE' | 'WALL' | 'ICE' | 'VINE';
 export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL' | 'STRUCTURE';
 export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
 export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature' | 'placing-structure';
-export type EffectKind = 'beam' | 'spray' | 'burst';
+export type EffectKind = 'beam' | 'spray' | 'burst' | 'freeze';
 
 // ---------------------------------------------------------------------------
 // CombatEffect — serializable, authoritative record of a pending sim event.
@@ -74,6 +74,8 @@ export interface CardDef {
   spellDamage?: number;
   /** For STRUCTURE cards: which shape helper to apply at placement. */
   structureShape?: string;
+  /** Override the EffectKind derived from element (e.g. frost_shard uses 'freeze'). */
+  effectKind?: EffectKind;
 }
 
 export interface CardInstance {
