@@ -5,6 +5,7 @@ import { applyCommand } from './commands';
 import { hashHex } from './stateHash';
 import { runEnemyTurn } from './ai';
 import { mountCardArtCanvases } from './cardArt';
+import { structureRadius } from './structureShapes';
 
 const ELEMENT_COLOR: Record<string, string> = {
   FIRE: '#e84a1a',
@@ -24,6 +25,30 @@ let _gs: GameState;
 let _renderFn: () => void;
 let _canvas: HTMLCanvasElement;
 
+// ─── Drag state ───────────────────────────────────────────────────────────────
+// Module-level so drawDragOverlay can read it every animation frame.
+
+let _dragActive  = false;
+let _dragStart   = { x: 0, y: 0 };
+let _dragCurrent = { x: 0, y: 0 };
+
+// Stored so we can remove them if a second drag somehow starts before the first ends.
+let _docMoveHandler: ((e: MouseEvent) => void) | null = null;
+let _docUpHandler:   ((e: MouseEvent) => void) | null = null;
+
+function toCanvasCoords(e: MouseEvent): { x: number; y: number } {
+  const rect = _canvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(_canvas.width  - 1, Math.round(((e.clientX - rect.left) / rect.width)  * _canvas.width))),
+    y: Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height))),
+  };
+}
+
+function removeDragListeners(): void {
+  if (_docMoveHandler) { document.removeEventListener('mousemove', _docMoveHandler); _docMoveHandler = null; }
+  if (_docUpHandler)   { document.removeEventListener('mouseup',   _docUpHandler);   _docUpHandler   = null; }
+}
+
 export function initUI(
   gs: GameState,
   canvas: HTMLCanvasElement,
@@ -32,6 +57,149 @@ export function initUI(
   _gs = gs;
   _canvas = canvas;
   _renderFn = renderFn;
+}
+
+// ─── Drag overlay renderer ────────────────────────────────────────────────────
+// Called every animation frame from main.ts, on top of the sim canvas.
+
+const _EL_COLOR: Record<string, string> = {
+  FIRE: '#e84a1a', WATER: '#1a7ae8', EARTH: '#c09040', NEUTRAL: '#aaa',
+};
+
+export function isDragActive(): boolean { return _dragActive; }
+
+export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): void {
+  if (!_dragActive) return;
+  const { phase } = gs;
+
+  if (phase === 'targeting-spell' && gs.pendingSpellCardUid) {
+    const card = gs.player.hand.find(c => c.uid === gs.pendingSpellCardUid);
+    if (!card) return;
+    const def   = CARD_DEFS[card.defId];
+    const color = _EL_COLOR[def.element] ?? '#fff';
+    const sx    = gs.player.base.simX;
+    const sy    = gs.player.base.simY;
+    const tx    = _dragCurrent.x;
+    const ty    = _dragCurrent.y;
+
+    ctx.save();
+    // Trajectory line
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+
+    // Arrowhead at target
+    const angle = Math.atan2(ty - sy, tx - sx);
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle   = color;
+    ctx.beginPath();
+    ctx.moveTo(tx + Math.cos(angle) * 5, ty + Math.sin(angle) * 5);
+    ctx.lineTo(tx + Math.cos(angle + 2.5) * 6, ty + Math.sin(angle + 2.5) * 6);
+    ctx.lineTo(tx + Math.cos(angle - 2.5) * 6, ty + Math.sin(angle - 2.5) * 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Glow ring at target
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Source pulse ring at player base
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
+
+  if (phase === 'placing-creature' || phase === 'placing-generator') {
+    const cardUid = gs.pendingCreatureCardUid ?? gs.pendingGeneratorCardUid;
+    if (!cardUid) return;
+    const card = gs.player.hand.find(c => c.uid === cardUid);
+    if (!card) return;
+    const def   = CARD_DEFS[card.defId];
+    const color = _EL_COLOR[def.element] ?? '#fff';
+    const { x, y } = _dragCurrent;
+
+    // Snap to lower half (player territory)
+    const validY = y >= ctx.canvas.height / 2;
+    const boxColor = validY ? color : '#e44';
+
+    ctx.save();
+    // Ghost box at placement position
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = boxColor;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([3, 2]);
+    ctx.strokeRect(x - 7, y - 7, 14, 14);
+
+    // March direction arrow (always toward enemy = upward for player)
+    const arrowLen = 36;
+    const arrowTy  = Math.max(2, y - arrowLen);
+    ctx.setLineDash([4, 3]);
+    ctx.globalAlpha = 0.65;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 7);
+    ctx.lineTo(x, arrowTy);
+    ctx.stroke();
+
+    // Arrowhead
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle   = color;
+    ctx.beginPath();
+    ctx.moveTo(x, arrowTy - 4);
+    ctx.lineTo(x - 3, arrowTy + 4);
+    ctx.lineTo(x + 3, arrowTy + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+    return;
+  }
+
+  if (phase === 'placing-structure' && gs.pendingStructureCardUid) {
+    const card = gs.player.hand.find(c => c.uid === gs.pendingStructureCardUid);
+    if (!card) return;
+    const def    = CARD_DEFS[card.defId];
+    const color  = _EL_COLOR[def.element] ?? '#aaa';
+    const radius = structureRadius(def.structureShape ?? 'wall_line');
+    const { x, y } = _dragCurrent;
+    const validY = y >= ctx.canvas.height / 2;
+    const outlineColor = validY ? color : '#e44';
+
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    ctx.strokeStyle = outlineColor;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([3, 2]);
+    // Horizontal footprint bar
+    ctx.strokeRect(x - radius, y - 4, radius * 2, 8);
+    // Center dot
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle   = outlineColor;
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -142,15 +310,15 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     phaseMsg = `<div class="phase-msg"><b>${aname}</b> — click an enemy unit or the ⚔ Enemy Base button to attack. Click elsewhere to cancel.</div>`;
   } else if (phase === 'targeting-spell') {
     const sname = pendingCardName(gs, gs.pendingSpellCardUid);
-    phaseMsg = `<div class="phase-msg">Cast <b>${sname || 'Spell'}</b> — click a target unit or the ⚔ Enemy Base button. Click elsewhere to cancel.</div>`;
+    phaseMsg = `<div class="phase-msg">Cast <b>${sname || 'Spell'}</b> — <b>drag on the battlefield</b> to aim and release to fire. Or click an enemy unit / ⚔ button. Click elsewhere to cancel.</div>`;
   } else if (phase === 'placing-generator') {
-    phaseMsg = `<div class="phase-msg">Click the <b>lower half</b> of the battlefield to place your generator. Generators produce energy each turn.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to position your generator, release to place. Generators produce energy each turn.</div>`;
   } else if (phase === 'placing-creature') {
     const cname = pendingCardName(gs, gs.pendingCreatureCardUid);
-    phaseMsg = `<div class="phase-msg">Place <b>${cname || 'Creature'}</b> in the <b>lower half</b>. It will advance toward the enemy base each tick.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to aim <b>${cname || 'Creature'}</b>. The arrow shows its march path — release to deploy.</div>`;
   } else if (phase === 'placing-structure') {
     const stname = pendingCardName(gs, gs.pendingStructureCardUid);
-    phaseMsg = `<div class="phase-msg">Place <b>${stname || 'Structure'}</b> in the <b>lower half</b>. Must not overlap the core. Click to place stone wall cells.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to position <b>${stname || 'Structure'}</b>. The outline shows its footprint — release to place.</div>`;
   }
 
   const endTurnBtn = turn === 'player' && !gs.aiActing
@@ -333,36 +501,62 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     });
   });
 
-  _canvas.onclick = e => {
+  // Clear legacy onclick — all canvas interaction is now drag-based.
+  _canvas.onclick = null;
+
+  _canvas.onmousedown = e => {
+    e.preventDefault();
     e.stopPropagation();
     if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
 
     const isPlacingGen       = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
     const isPlacingCreature  = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
     const isPlacingStructure = gs.phase === 'placing-structure' && !!gs.pendingStructureCardUid;
-    const isTargetingSpell   = gs.phase === 'targeting-spell' && !!gs.pendingSpellCardUid;
+    const isTargetingSpell   = gs.phase === 'targeting-spell'   && !!gs.pendingSpellCardUid;
     if (!isPlacingGen && !isPlacingCreature && !isPlacingStructure && !isTargetingSpell) return;
 
-    const rect = _canvas.getBoundingClientRect();
-    const x = Math.max(0, Math.min(_canvas.width - 1,  Math.round(((e.clientX - rect.left) / rect.width)  * _canvas.width)));
-    const y = Math.max(0, Math.min(_canvas.height - 1, Math.round(((e.clientY - rect.top)  / rect.height) * _canvas.height)));
+    // Clean up any stale drag listeners from a prior interrupted drag.
+    removeDragListeners();
 
-    const cardUid = isTargetingSpell ? gs.pendingSpellCardUid!
-                  : isPlacingGen ? gs.pendingGeneratorCardUid!
-                  : isPlacingCreature ? gs.pendingCreatureCardUid!
-                  : gs.pendingStructureCardUid!;
-    const ok = applyCommand(gs, { kind: 'playCard', tick: gs.tick, owner: 'player', cardUid, placement: { x, y } });
+    const start = toCanvasCoords(e);
+    _dragActive  = true;
+    _dragStart   = start;
+    _dragCurrent = { ...start };
 
-    // Only clear placement state on success — rejected placements keep the phase active.
-    if (ok) {
-      gs.pendingSpellCardUid = null;
-      gs.pendingGeneratorCardUid = null;
-      gs.pendingCreatureCardUid = null;
-      gs.pendingStructureCardUid = null;
-      gs.selectedCardUid = null;
-      gs.phase = 'main';
-    }
-    _renderFn();
+    _docMoveHandler = (me: MouseEvent) => {
+      _dragCurrent = toCanvasCoords(me);
+    };
+
+    _docUpHandler = (me: MouseEvent) => {
+      _dragCurrent = toCanvasCoords(me);
+      _dragActive  = false;
+      removeDragListeners();
+
+      // The release position is the action target for both spells and placements.
+      const { x, y } = _dragCurrent;
+      const cardUid = isTargetingSpell   ? gs.pendingSpellCardUid!
+                    : isPlacingGen       ? gs.pendingGeneratorCardUid!
+                    : isPlacingCreature  ? gs.pendingCreatureCardUid!
+                    : gs.pendingStructureCardUid!;
+
+      const ok = applyCommand(gs, {
+        kind: 'playCard', tick: gs.tick, owner: 'player',
+        cardUid, placement: { x, y },
+      });
+
+      if (ok) {
+        gs.pendingSpellCardUid    = null;
+        gs.pendingGeneratorCardUid = null;
+        gs.pendingCreatureCardUid  = null;
+        gs.pendingStructureCardUid = null;
+        gs.selectedCardUid         = null;
+        gs.phase = 'main';
+      }
+      _renderFn();
+    };
+
+    document.addEventListener('mousemove', _docMoveHandler);
+    document.addEventListener('mouseup',   _docUpHandler);
   };
 
   appEl.querySelectorAll('[data-target]').forEach(el => {
@@ -422,6 +616,9 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
 
   appEl.querySelector('.game-root')?.addEventListener('click', () => {
     if (gs.phase !== 'main') {
+      // Also cancel any in-progress drag.
+      _dragActive = false;
+      removeDragListeners();
       gs.phase = 'main';
       gs.selectedAttackerUid = null;
       gs.selectedCardUid = null;

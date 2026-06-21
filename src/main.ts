@@ -1,7 +1,7 @@
 import './styles.css';
 import { updateSim, renderSim, SIM_W, SIM_H } from './game/sandSim';
 import { createInitialGameState } from './game/state';
-import { initUI, renderUI } from './game/ui';
+import { initUI, renderUI, drawDragOverlay, isDragActive } from './game/ui';
 import { renderCreatureEntities, drawBattlefieldLabels } from './game/battlefieldEntities';
 import { resolveSimDamage } from './game/simDamage';
 import { updateCombatEffects } from './game/combatEffects';
@@ -92,12 +92,18 @@ function loop(ts: number): void {
     saveReplay(gs);
   }
 
-  if (ticked) {
+  // Re-render the canvas whenever the sim ticked OR a drag is active.
+  // A drag is active at up to 60fps (mouse movement), which exceeds the 30fps sim rate,
+  // so we must re-clear and re-draw every frame while dragging to avoid overlay smearing.
+  if (ticked || isDragActive()) {
     renderSim(ctx, gs.sim);
     renderCreatureEntities(ctx, gs);
     drawBattlefieldLabels(ctx, gs);
-    updateDebugPanel();
+    if (ticked) updateDebugPanel();
   }
+
+  // Drag overlay always drawn after the base canvas layers.
+  drawDragOverlay(ctx, gs);
 
   requestAnimationFrame(loop);
 }
