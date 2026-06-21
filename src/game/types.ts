@@ -1,6 +1,8 @@
 import type { PRNGState } from './prng';
+import type { MaterialType } from './materials';
 
 export type { PRNGState };
+export type { MaterialType };
 
 export type ParticleType = 'EMPTY' | 'WATER' | 'FIRE' | 'SAND' | 'SMOKE' | 'SPARK' | 'CORE' | 'WALL' | 'ICE' | 'VINE';
 export type CardType = 'GENERATOR' | 'CREATURE' | 'SPELL' | 'STRUCTURE';
@@ -34,6 +36,9 @@ export interface CombatEffect {
 export interface SimParticle {
   type: ParticleType;
   lifetime: number;
+  /** Physical material type — drives hardness, flammability, and erosion rates.
+   * Independent of rendering color; color is stored in the `color` field. */
+  material: MaterialType;
   /** Direction that gravity pulls this particle: 1 is down, -1 is up. */
   gravity?: 1 | -1;
   /** Owning side for structures; omitted for non-structure particles. */

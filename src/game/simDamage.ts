@@ -4,6 +4,7 @@ import { CARD_DEFS } from './cards';
 import { destroyDeadUnits, checkWinLoss } from './rules';
 import { countCoreCells } from './state';
 import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RADIUS } from './footprint';
+import { MaterialType, MaterialTable, fireErosionProb } from './materials';
 
 // ---------------------------------------------------------------------------
 // Particle-overlap damage resolver — primary damage authority for Phase 4.
@@ -24,11 +25,21 @@ const WATER_FIRE_RESIST_PROB  = 0.08;  // WATER element resists fire
 const EARTH_FIRE_RESIST_PROB  = 0.20;  // EARTH element is stonier, partial resist
 const SAND_DAMAGE_PROB        = 0.12;  // sand chips away at non-earth units
 const EARTH_SAND_DAMAGE_PROB  = 0.04;  // earth units shrug off most sand
-const CORE_FIRE_REMOVE_PROB   = 0.06;
-const WALL_FIRE_REMOVE_PROB   = 0.03;
 // ICE counters fire — fire units take heavy frost damage, others take moderate damage
 const FIRE_ICE_DAMAGE_PROB    = 0.65;  // fire element is especially vulnerable to ice
 const OTHER_ICE_DAMAGE_PROB   = 0.15;  // non-fire units still take some frost damage
+
+// ---------------------------------------------------------------------------
+// Cell erosion probabilities — normalized to STONE material.
+// fireErosionProb() scales these by the cell's actual material so that harder
+// materials (STEEL) survive much longer than softer ones (WOOD).
+//
+// STONE_CORE_FIRE_BASE: base prob such that STONE → 0.06 effective rate
+// STONE_WALL_FIRE_BASE: base prob such that STONE → 0.03 effective rate
+// (STONE: (1-0.85)*(1+0.02) = 0.153)
+// ---------------------------------------------------------------------------
+const STONE_CORE_FIRE_BASE = 0.06;  // fireErosionProb normalizes via STONE_EROSION_FACTOR
+const STONE_WALL_FIRE_BASE = 0.03;
 
 // Per-uid log cooldown — throttle to one entry every ~3 seconds.
 const LOG_COOLDOWN_TICKS = 90;
@@ -96,11 +107,14 @@ function erodeCoreCells(gs: GameState): void {
   for (let y = 0; y < sim.height; y++) {
     for (let x = 0; x < sim.width; x++) {
       const idx = y * sim.width + x;
-      if (sim.grid[idx].type !== 'CORE') continue;
-      // Count hot particles in a tight radius around this specific CORE cell.
+      const cell = sim.grid[idx];
+      if (cell.type !== 'CORE') continue;
       const hotNearCell = countParticlesInFootprint(sim, { cx: x, cy: y, radius: CORE_RADIUS }, ['FIRE', 'SPARK']);
-      if (hotNearCell > 0 && chance(sim.prng, CORE_FIRE_REMOVE_PROB)) {
-        sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+      // Scale removal probability by the cell's material hardness/flammability.
+      // CORE cells are STONE, so fireErosionProb reproduces the original 0.06 rate.
+      const removeProb = fireErosionProb(cell.material, STONE_CORE_FIRE_BASE);
+      if (hotNearCell > 0 && chance(sim.prng, removeProb)) {
+        sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
       }
     }
   }
@@ -113,10 +127,20 @@ function erodeWallCells(gs: GameState): void {
   for (let y = 0; y < sim.height; y++) {
     for (let x = 0; x < sim.width; x++) {
       const idx = y * sim.width + x;
-      if (sim.grid[idx].type !== 'WALL') continue;
+      const cell = sim.grid[idx];
+      if (cell.type !== 'WALL') continue;
       const hotNear = countParticlesInFootprint(sim, { cx: x, cy: y, radius: CORE_RADIUS }, ['FIRE', 'SPARK']);
-      if (hotNear > 0 && chance(sim.prng, WALL_FIRE_REMOVE_PROB)) {
-        sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+      // Harder materials (STEEL) resist fire; flammable materials (WOOD) burn fast.
+      // For current STONE walls, fireErosionProb reproduces the original 0.03 rate.
+      const removeProb = fireErosionProb(cell.material, STONE_WALL_FIRE_BASE);
+      if (hotNear > 0 && chance(sim.prng, removeProb)) {
+        const mat = MaterialTable[cell.material];
+        if (mat.leavesAsh) {
+          // Organic materials (WOOD) leave ash rather than vanishing cleanly.
+          sim.grid[idx] = { type: 'SAND', lifetime: 0, material: MaterialType.ASH, color: '#606060' };
+        } else {
+          sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
+        }
       }
     }
   }
@@ -132,7 +156,7 @@ function erodeVineCells(gs: GameState): void {
       if (sim.grid[idx].type !== 'VINE') continue;
       const hotNear = countParticlesInFootprint(sim, { cx: x, cy: y, radius: 2 }, ['FIRE', 'SPARK']);
       if (hotNear > 0 && chance(sim.prng, 0.18)) {
-        sim.grid[idx] = { type: 'FIRE', lifetime: 50, owner: sim.grid[idx].owner };
+        sim.grid[idx] = { type: 'FIRE', lifetime: 50, owner: sim.grid[idx].owner, material: MaterialType.FIRE };
       }
     }
   }

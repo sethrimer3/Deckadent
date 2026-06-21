@@ -817,3 +817,166 @@ No other files need to change.
   `performance.now()`-relative, not session-relative.
 - **No art for enemy sidebar unit cards.** `unitCard()` in `ui.ts` does not currently include
   a `data-card-art` zone — enemy/player sidebar units show text only.
+
+---
+
+---
+
+## Phase 9: Particle Material Property System (completed)
+
+---
+
+### Overview
+
+Every `SimParticle` in the grid now carries a `material: MaterialType` field that drives
+physical behaviour (hardness, flammability, conductivity, density). Materials are
+**independent of rendering color**: the stored `color` field and the `COLORS` fallback
+table are purely cosmetic; the `material` field is gameplay-authoritative.
+
+---
+
+### MaterialType enum (`src/game/materials.ts`)
+
+| Enum value | Numeric | Role |
+|---|:---:|---|
+| `VOID`    | 0  | Background / empty — not destructible; never participates in erosion checks |
+| `STONE`   | 1  | Castle walls, fortress shell, stone creatures, CORE cells |
+| `STEEL`   | 2  | Reserved for hardened inner reinforcements (future use) |
+| `WATER`   | 3  | Water spell particles, water elemental cells |
+| `FIRE`    | 4  | Fire spray, SPARK, burning cells |
+| `SAND`    | 5  | Sand/earth particles |
+| `WOOD`    | 6  | VINE cells, organic structures; leavesAsh = true |
+| `FLESH`   | 7  | Reserved for creature body cells (future sim-body creatures) |
+| `CRYSTAL` | 8  | Reserved for magic conduit structures |
+| `ASH`     | 9  | Burned-out remnants; produced when a WOOD WALL cell is destroyed by fire |
+| `ICE`     | 10 | Frozen cells |
+| `MAGIC`   | 11 | Spell effect cells with no physical analog |
+
+MaterialType is a **numeric enum** — enum values are small integers hashed directly
+in `stateHash.ts` without a lookup table.
+
+---
+
+### MaterialProps fields (`MaterialTable` in `src/game/materials.ts`)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `label` | string | Human-readable name |
+| `hardness` | 0.0–1.0 | Resistance to damage — higher = harder to destroy |
+| `flammability` | 0.0–1.0 | Susceptibility to fire — higher = burns faster |
+| `conductivity` | 0.0–1.0 | How well energy/fire spreads through this material |
+| `density` | float | Relative mass (reserved for future displacement physics) |
+| `color` | hex string | Canonical fallback color — visual only |
+| `destructible` | bool | false = indestructible (only VOID) |
+| `leavesAsh` | bool | true = when destroyed by fire, leaves an ASH-material SAND cell |
+
+---
+
+### Material assignment at cell creation
+
+| Cell origin | Assigned material |
+|---|---|
+| EMPTY grid cells (createSimState) | `VOID` |
+| `addParticle(WATER)` | `WATER` |
+| `addParticle(FIRE)` | `FIRE` |
+| `addParticle(SAND)` | `SAND` |
+| `addParticle(SMOKE)` | `VOID` (gaseous, no physical resistance) |
+| `addParticle(SPARK)` | `FIRE` (hot particle, same material class as fire) |
+| `addParticle(ICE)` | `ICE` |
+| `addParticle(VINE)` | `WOOD` |
+| `placeCoreAtBase` (CORE cells) | `STONE` |
+| `placeBaseShell` (fortress shell WALL) | `STONE` |
+| `placeGeneratorParticles` (WALL) | `STONE` |
+| `setWall` in structureShapes (default) | `STONE` |
+| `setVine` in structureShapes | `WOOD` |
+
+The `TYPE_MATERIAL` table in `sandSim.ts` maps every `ParticleType` to its default
+material, used by `addParticle` and inline step-function particle creation.
+
+---
+
+### How hardness and flammability affect fire erosion
+
+Fire-removal probability is computed via `fireErosionProb(material, stoneBase)`:
+
+```
+effective_prob = stoneBase / STONE_EROSION_FACTOR × (1 − hardness) × (1 + flammability)
+```
+
+Where `STONE_EROSION_FACTOR = (1 − 0.85) × (1 + 0.02) = 0.153`.
+
+This normalizes each base constant to STONE, then scales for other materials:
+
+| Material | hardness | flammability | Relative erosion rate |
+|---|:---:|:---:|:---:|
+| STEEL    | 0.95 | 0.01 | 0.33× (very resistant) |
+| STONE    | 0.85 | 0.02 | 1.0× (baseline) |
+| CRYSTAL  | 0.70 | 0.05 | 2.05× |
+| SAND     | 0.20 | 0.15 | 6.1× |
+| WOOD     | 0.35 | 0.80 | 7.7× (burns fast) |
+
+Applied in `erodeCoreCells` and `erodeWallCells` in `simDamage.ts`. The STONE base
+constants (`STONE_CORE_FIRE_BASE = 0.06`, `STONE_WALL_FIRE_BASE = 0.03`) reproduce
+the original hand-tuned rates exactly for current STONE cells.
+
+---
+
+### Water–fire special case
+
+FIRE cells contacted by WATER have immediate (probability ≈ 1.0) removal handled
+deterministically in `stepFire` and `stepWater` in `sandSim.ts`:
+
+- `stepFire`: water adjacent → fire immediately converts to SMOKE, water becomes EMPTY.
+- `stepWater`: fire adjacent → fire converts to SMOKE, water sacrifices itself.
+- `resolveCollision`: water/fire collision → SMOKE.
+
+This is more aggressive than material-formula scaling and is intentional — water
+extinguishes fire on contact rather than probabilistically.
+
+---
+
+### leavesAsh behaviour
+
+When a WALL cell with `leavesAsh: true` material (currently only `WOOD`) is eroded
+by fire in `erodeWallCells`, it becomes:
+
+```typescript
+{ type: 'SAND', lifetime: 0, material: MaterialType.ASH, color: '#606060' }
+```
+
+ASH cells render grey, fall and settle like sand, and are themselves nearly
+non-flammable (`flammability: 0.00`). No current structure cards produce WOOD WALL
+cells; this path is ready for future wooden-structure cards.
+
+---
+
+### Rendering independence
+
+`renderSim` in `sandSim.ts` derives color from `p.color` (if set) or `COLORS[p.type]`.
+Material type is **never consulted by the renderer**. This means:
+
+- A water elemental with black eye pixels renders black but has `WATER` material.
+- A stone generator cell retains its procedural rock color (`#786c6a`) while having `STONE` material.
+- An ASH cell overrides its color to `#606060` (set at creation) while its particle type is SAND.
+
+---
+
+### State hash update
+
+`hashSimState` in `stateHash.ts` now includes `p.material` for every non-EMPTY cell:
+
+```typescript
+h = djb2Update(h, p.material); // numeric enum value — fast integer hash
+```
+
+This ensures desync is detectable if two clients disagree on a cell's material.
+Replay version bumped to `deckadent-replay-v4` — v3 records are rejected.
+
+---
+
+### Current limitations (Phase 9)
+
+- **STEEL material unassigned.** STEEL is defined and ready but no current cell creation site uses it. Could be applied to inner CORE cells (hardness 0.95) in a future pass.
+- **FLESH/CRYSTAL/MAGIC unassigned.** Defined for future creature bodies, crystal conduits, and spell effect particles.
+- **No per-material visual effects.** All rendering remains color-driven; material could inform future pixel effects (glow for CRYSTAL, ember particles for WOOD burning, etc.).
+- **leavesAsh only in erodeWallCells.** The vine-to-fire conversion path (erodeVineCells) predates the material system and does not check leavesAsh; vine burns to fire, not ash.

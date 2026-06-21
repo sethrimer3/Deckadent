@@ -4,6 +4,7 @@ import type { PRNGState } from './prng';
 import { CARD_DEFS, PLAYER_STARTING_DECK, ENEMY_STARTING_DECK } from './cards';
 import { createSimState } from './sandSim';
 import { placeGeneratorParticles } from './generatorShapes';
+import { MaterialType } from './materials';
 
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
@@ -102,7 +103,7 @@ function placeCoreAtBase(sim: SimState, base: BaseInstance): void {
     const x = base.simX + dx;
     const y = base.simY + dy;
     if (x >= 0 && x < sim.width && y >= 0 && y < sim.height) {
-      sim.grid[y * sim.width + x] = { type: 'CORE', lifetime: 0 };
+      sim.grid[y * sim.width + x] = { type: 'CORE', lifetime: 0, material: MaterialType.STONE };
     }
   }
 }
@@ -121,7 +122,7 @@ function placeBaseShell(sim: SimState, base: BaseInstance): void {
       const x = base.simX + dx, y = base.simY + dy;
       if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
       const idx = y * sim.width + x;
-      if (sim.grid[idx].type === 'EMPTY') sim.grid[idx] = { type: 'WALL', lifetime: 999, owner: base.owner };
+      if (sim.grid[idx].type === 'EMPTY') sim.grid[idx] = { type: 'WALL', lifetime: 999, owner: base.owner, material: MaterialType.STONE };
     }
   }
 }
