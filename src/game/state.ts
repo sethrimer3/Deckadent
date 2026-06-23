@@ -3,7 +3,7 @@ import { createPRNG, nextFloat } from './prng';
 import type { PRNGState } from './prng';
 import { CARD_DEFS, PLAYER_STARTING_DECK, ENEMY_STARTING_DECK } from './cards';
 import { createSimState } from './sandSim';
-import { placeGeneratorParticles } from './generatorShapes';
+import { initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 import { MaterialType } from './materials';
 
 let _uid = 0;
@@ -42,7 +42,7 @@ function makeCard(defId: string): CardInstance {
 function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): UnitInstance {
   const def = CARD_DEFS[defId];
   const collisionEnergy = def.collisionEnergy;
-  return {
+  const unit: UnitInstance = {
     uid: newUid(),
     defId,
     hp:  def.hp  ?? 3,
@@ -55,6 +55,8 @@ function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): Un
     collisionEnergy,
     maxCollisionEnergy: collisionEnergy,
   };
+  if (def.type === 'GENERATOR') initializeGeneratorHealth(unit);
+  return unit;
 }
 
 // Number of CORE cells in the initial diamond cluster — used for base maxHp.

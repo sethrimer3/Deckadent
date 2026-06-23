@@ -5,6 +5,7 @@ import { destroyDeadUnits, checkWinLoss } from './rules';
 import { countCoreCells } from './state';
 import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RADIUS } from './footprint';
 import { MaterialType, MaterialTable, fireErosionProb } from './materials';
+import { countGeneratorCells } from './generatorShapes';
 
 // ---------------------------------------------------------------------------
 // Particle-overlap damage resolver — primary damage authority for Phase 4.
@@ -40,6 +41,10 @@ const OTHER_ICE_DAMAGE_PROB   = 0.15;  // non-fire units still take some frost d
 // ---------------------------------------------------------------------------
 const STONE_CORE_FIRE_BASE = 0.06;  // fireErosionProb normalizes via STONE_EROSION_FACTOR
 const STONE_WALL_FIRE_BASE = 0.03;
+const CORE_WATER_EROSION_PROB = 0.018;
+const CORE_ICE_CRACK_PROB = 0.014;
+const CORE_SAND_CHIP_PROB = 0.028;
+const CORE_SAND_VOLUME = 4;
 
 // Per-uid log cooldown — throttle to one entry every ~3 seconds.
 const LOG_COOLDOWN_TICKS = 90;
@@ -109,11 +114,23 @@ function erodeCoreCells(gs: GameState): void {
       const idx = y * sim.width + x;
       const cell = sim.grid[idx];
       if (cell.type !== 'CORE') continue;
-      const hotNearCell = countParticlesInFootprint(sim, { cx: x, cy: y, radius: CORE_RADIUS }, ['FIRE', 'SPARK']);
+      const footprint = { cx: x, cy: y, radius: CORE_RADIUS };
+      const hotNearCell = countParticlesInFootprint(sim, footprint, ['FIRE', 'SPARK']);
+      const sandNearCell = countParticlesInFootprint(sim, footprint, ['SAND']);
+      const waterNearCell = countParticlesInFootprint(sim, footprint, ['WATER']);
+      const iceNearCell = countParticlesInFootprint(sim, footprint, ['ICE']);
       // Scale removal probability by the cell's material hardness/flammability.
       // CORE cells are STONE, so fireErosionProb reproduces the original 0.06 rate.
-      const removeProb = fireErosionProb(cell.material, STONE_CORE_FIRE_BASE);
-      if (hotNearCell > 0 && chance(sim.prng, removeProb)) {
+      const removeProb = hotNearCell > 0
+        ? fireErosionProb(cell.material, STONE_CORE_FIRE_BASE)
+        : sandNearCell >= CORE_SAND_VOLUME
+          ? CORE_SAND_CHIP_PROB
+          : waterNearCell > 0
+            ? CORE_WATER_EROSION_PROB
+            : iceNearCell > 0
+              ? CORE_ICE_CRACK_PROB
+              : 0;
+      if (removeProb > 0 && chance(sim.prng, removeProb)) {
         sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
       }
     }
@@ -168,6 +185,15 @@ function syncBaseHp(gs: GameState): void {
   }
 }
 
+/** Map surviving generator cells directly to generator HP, deterministically. */
+export function syncGeneratorHp(unit: UnitInstance, gs: GameState): void {
+  unit.hp = countGeneratorCells(gs.sim, unit.uid);
+}
+
+export function syncGeneratorHealth(gs: GameState): void {
+  for (const unit of [...gs.player.generators, ...gs.enemy.generators]) syncGeneratorHp(unit, gs);
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────────
 
 /**
@@ -179,22 +205,20 @@ export function resolveSimDamage(gs: GameState): void {
 
   const { player, enemy } = gs;
 
-  for (const unit of [
-    ...player.generators, ...player.creatures,
-    ...enemy.generators,  ...enemy.creatures,
-  ]) {
+  for (const unit of [...player.creatures, ...enemy.creatures]) {
     damageUnit(unit, gs);
   }
 
   erodeCoreCells(gs);
   erodeWallCells(gs);
   erodeVineCells(gs);
+  syncGeneratorHealth(gs);
   syncBaseHp(gs);
 
   for (const ps of [player, enemy]) {
     if (ps.base.hp === 0 && shouldLog(`base_${ps.base.owner}`, gs.tick)) {
       const lbl = ps.base.owner === 'player' ? 'Player' : 'Enemy';
-      gs.combatLog.push(`${lbl} base core destroyed by fire!`);
+      gs.combatLog.push(`${lbl} base core destroyed by particle erosion!`);
     }
   }
 

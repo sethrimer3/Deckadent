@@ -3,6 +3,9 @@ import { addParticle, SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
 import { countCoreCells } from './state';
 import { MaterialType } from './materials';
+import { damageGeneratorCells } from './generatorShapes';
+import { destroyDeadUnits } from './rules';
+import { syncGeneratorHealth } from './simDamage';
 
 // ---------------------------------------------------------------------------
 // Deterministic creature movement system.
@@ -156,8 +159,8 @@ function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, d
   if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
 }
 
-function damageGenerator(generator: UnitInstance | null, amount: number): void {
-  if (generator) generator.hp -= amount;
+function damageGenerator(gs: GameState, generator: UnitInstance | null, amount: number): void {
+  if (generator) damageGeneratorCells(gs.sim, generator.uid, amount);
 }
 
 function damageCreature(creature: UnitInstance | null, amount: number): void {
@@ -210,7 +213,7 @@ function triggerCollisionEffect(
         else if (cell.type === 'EMPTY') addParticle(gs.sim, px, py, 'FIRE');
       }
       damageOpposingWall(gs, owner, x, y, 1, true); // ignite=true for fire creatures
-      damageGenerator(generator, 1);
+      damageGenerator(gs, generator, 1);
       damageBaseCore(gs, base, 1);
       damageCreature(creature, 1);
       break;
@@ -221,20 +224,20 @@ function triggerCollisionEffect(
         damageOpposingWall(gs, owner, x, py, 1);
         if (gs.sim.grid[py * gs.sim.width + x].type === 'EMPTY') addParticle(gs.sim, x, py, 'WATER', dy);
       }
-      damageGenerator(generator, 1);
+      damageGenerator(gs, generator, 1);
       damageBaseCore(gs, base, 1);
       damageCreature(creature, 1);
       break;
     case 'EARTH':
       damageOpposingWall(gs, owner, x, y, 2);
       for (let ox = -2; ox <= 2; ox++) addParticle(gs.sim, x + ox, y - dy, 'SAND', dy);
-      damageGenerator(generator, 2);
+      damageGenerator(gs, generator, 2);
       damageBaseCore(gs, base, 2);
       damageCreature(creature, 2);
       break;
     default:
       damageOpposingWall(gs, owner, x, y, 1);
-      damageGenerator(generator, 1);
+      damageGenerator(gs, generator, 1);
       damageBaseCore(gs, base, 1);
       damageCreature(creature, 1);
   }
@@ -321,9 +324,11 @@ export function updateCreatureMovement(gs: GameState): void {
     const exhausted = ps.creatures.filter(unit => unit.hp <= 0 && unit.collisionEnergy === 0);
     for (const unit of exhausted) gs.combatLog.push(`${CARD_DEFS[unit.defId].name} dissipates after exhausting its collision energy.`);
     ps.creatures = ps.creatures.filter(unit => unit.hp > 0);
-    const destroyedGenerators = ps.generators.filter(unit => unit.hp <= 0);
-    for (const unit of destroyedGenerators) gs.combatLog.push(`${CARD_DEFS[unit.defId].name} was destroyed by a summon collision.`);
-    ps.generators = ps.generators.filter(unit => unit.hp > 0);
   }
+
+  // Collision damage removes physical cells first; the shared cleanup path then
+  // synchronizes card HP and clears any generator whose body is gone.
+  syncGeneratorHealth(gs);
+  destroyDeadUnits(gs);
 
 }

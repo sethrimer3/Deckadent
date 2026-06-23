@@ -20,6 +20,13 @@ function add(pixels: StructurePixel[], dx: number, dy: number, color: string): v
   pixels.push({ dx, dy, color });
 }
 
+/** Later detail pixels replace base pixels at the same coordinate. */
+function uniquePixels(pixels: StructurePixel[]): StructurePixel[] {
+  const unique = new Map<string, StructurePixel>();
+  for (const pixel of pixels) unique.set(`${pixel.dx},${pixel.dy}`, pixel);
+  return [...unique.values()];
+}
+
 function mountain(core: string): StructurePixel[] {
   const pixels: StructurePixel[] = [];
   for (let y = 0; y < 13; y++) {
@@ -63,9 +70,9 @@ function dome(core: string): StructurePixel[] {
 
 export function generatorPixels(unit: UnitInstance): StructurePixel[] {
   const core = CARD_DEFS[unit.defId].element === 'WATER' ? WATER_CORE : FIRE_CORE;
-  if (unit.defId === 'spring_core') return island(core);
-  if (unit.defId === 'spark_core') return mountain(core);
-  return dome(core);
+  if (unit.defId === 'spring_core') return uniquePixels(island(core));
+  if (unit.defId === 'spark_core') return uniquePixels(mountain(core));
+  return uniquePixels(dome(core));
 }
 
 /** Write a generator as individual WALL particles. Nothing is a visual-only overlay. */
@@ -94,5 +101,32 @@ export function canPlaceGeneratorParticles(sim: SimState, unit: UnitInstance): b
 export function clearGeneratorParticles(sim: SimState, uid: string): void {
   for (let i = 0; i < sim.grid.length; i++) {
     if (sim.grid[i].structureUid === uid) sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
+  }
+}
+
+/** Generators use their physical body as HP so gameplay and the sim cannot diverge. */
+export function initializeGeneratorHealth(unit: UnitInstance): void {
+  const cells = generatorPixels(unit).length;
+  unit.hp = cells;
+  unit.maxHp = cells;
+}
+
+/** Count surviving physical cells owned by a generator. This is its damage authority. */
+export function countGeneratorCells(sim: SimState, uid: string): number {
+  let count = 0;
+  for (const cell of sim.grid) if (cell.structureUid === uid && cell.type !== 'EMPTY') count++;
+  return count;
+}
+
+/**
+ * Remove generator cells in stable grid order. Used by physical collision effects;
+ * callers must synchronize the unit's display HP afterwards.
+ */
+export function damageGeneratorCells(sim: SimState, uid: string, amount: number): void {
+  let remaining = amount;
+  for (let i = 0; i < sim.grid.length && remaining > 0; i++) {
+    if (sim.grid[i].structureUid !== uid) continue;
+    sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
+    remaining--;
   }
 }

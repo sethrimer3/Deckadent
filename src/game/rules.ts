@@ -5,7 +5,7 @@ import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
-import { canPlaceGeneratorParticles, clearGeneratorParticles, placeGeneratorParticles } from './generatorShapes';
+import { canPlaceGeneratorParticles, clearGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -163,6 +163,7 @@ export function playCard(
       simX: placement.x,
       simY: placement.y,
     };
+    initializeGeneratorHealth(generator);
     ps.generators.push(generator);
     placeGeneratorParticles(gs.sim, generator);
     gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
