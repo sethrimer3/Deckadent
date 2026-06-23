@@ -2,6 +2,7 @@ import type { BaseInstance, GameState, Owner, UnitInstance } from './types';
 import { addParticle, SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
 import { countCoreCells } from './state';
+import { MaterialType } from './materials';
 
 // ---------------------------------------------------------------------------
 // Deterministic creature movement system.
@@ -147,12 +148,12 @@ function damageOpposingWall(gs: GameState, owner: Owner, x: number, y: number, d
   if (cell.type === 'VINE') {
     // Fire creatures ignite vine; other elements simply tear through it
     gs.sim.grid[idx] = ignite
-      ? { type: 'FIRE', lifetime: 50, owner: cell.owner }
-      : { type: 'EMPTY', lifetime: 0 };
+      ? { type: 'FIRE', lifetime: 50, owner: cell.owner, material: MaterialType.FIRE }
+      : { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
     return;
   }
   cell.lifetime -= damage;
-  if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+  if (cell.lifetime <= 0) gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
 }
 
 function damageGenerator(generator: UnitInstance | null, amount: number): void {
@@ -174,7 +175,7 @@ function damageBaseCore(gs: GameState, base: BaseInstance | null, amount: number
         if (x < 0 || x >= gs.sim.width || y < 0 || y >= gs.sim.height) continue;
         const idx = y * gs.sim.width + x;
         if (gs.sim.grid[idx].type !== 'CORE') continue;
-        gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0 };
+        gs.sim.grid[idx] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
         remaining--;
       }
     }
@@ -204,8 +205,8 @@ function triggerCollisionEffect(
         const px = x + ox, py = y + oy;
         if (px < 0 || px >= gs.sim.width || py < 0 || py >= gs.sim.height) continue;
         const cell = gs.sim.grid[py * gs.sim.width + px];
-        if (cell.type === 'SAND') gs.sim.grid[py * gs.sim.width + px] = { type: 'EMPTY', lifetime: 0 };
-        else if (cell.type === 'VINE') gs.sim.grid[py * gs.sim.width + px] = { type: 'FIRE', lifetime: 50, owner: cell.owner };
+        if (cell.type === 'SAND') gs.sim.grid[py * gs.sim.width + px] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
+        else if (cell.type === 'VINE') gs.sim.grid[py * gs.sim.width + px] = { type: 'FIRE', lifetime: 50, owner: cell.owner, material: MaterialType.FIRE };
         else if (cell.type === 'EMPTY') addParticle(gs.sim, px, py, 'FIRE');
       }
       damageOpposingWall(gs, owner, x, y, 1, true); // ignite=true for fire creatures

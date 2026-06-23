@@ -1,4 +1,5 @@
 import { createPRNG, nextFloat, chance } from './prng';
+import { MaterialType } from './materials';
 import type { SimState, SimParticle, ParticleType } from './types';
 
 export const SIM_W = 320;
@@ -9,6 +10,27 @@ const SMOKE_MAX = 70;
 const SPARK_MAX = 35;
 const ICE_MAX   = 300;  // ice persists a long time before melting naturally
 const VINE_MAX  = 60;   // vine structure lifetime (burning converts it to FIRE, not EMPTY)
+
+// ---------------------------------------------------------------------------
+// Default material for each particle type — used by addParticle and inline
+// particle construction. WALL material is set by the placement context (not
+// via addParticle, which blocks WALL).
+// ---------------------------------------------------------------------------
+const TYPE_MATERIAL: Record<ParticleType, MaterialType> = {
+  EMPTY: MaterialType.VOID,
+  WATER: MaterialType.WATER,
+  FIRE:  MaterialType.FIRE,
+  SAND:  MaterialType.SAND,
+  SMOKE: MaterialType.VOID,  // gaseous — no physical resistance
+  SPARK: MaterialType.FIRE,  // hot particle — fire-type material
+  CORE:  MaterialType.STONE, // never placed via addParticle, included for completeness
+  WALL:  MaterialType.STONE, // never placed via addParticle, included for completeness
+  ICE:   MaterialType.ICE,
+  VINE:  MaterialType.WOOD,
+};
+
+// Convenience shorthands used in step functions
+const M = MaterialType;
 
 // ---------------------------------------------------------------------------
 // Scratch buffer — per-tick "moved" flags. Not game state; purely algorithmic.
@@ -27,7 +49,10 @@ function ensureScratch(size: number): Uint8Array {
 
 export function createSimState(seed: number): SimState {
   const size = SIM_W * SIM_H;
-  const grid: SimParticle[] = Array.from({ length: size }, () => ({ type: 'EMPTY', lifetime: 0 }));
+  const grid: SimParticle[] = Array.from(
+    { length: size },
+    () => ({ type: 'EMPTY', lifetime: 0, material: M.VOID }),
+  );
   return { width: SIM_W, height: SIM_H, grid, prng: createPRNG(seed) };
 }
 
@@ -44,9 +69,10 @@ export function addParticle(
   // CORE and WALL are structural — placed directly, never via addParticle.
   if (type === 'CORE' || type === 'WALL') return;
   const existing = sim.grid[yi * sim.width + xi];
+  const material = TYPE_MATERIAL[type];
   if (existing.type !== 'EMPTY') {
     // Effect spawns collide too; they never overwrite an occupied cell.
-    resolveCollision(sim, { type, lifetime: 0, gravity }, xi, yi);
+    resolveCollision(sim, { type, lifetime: 0, gravity, material }, xi, yi);
     return;
   }
   const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(sim.prng) * 20
@@ -55,7 +81,7 @@ export function addParticle(
            : type === 'ICE'   ? ICE_MAX   + nextFloat(sim.prng) * 100
            : type === 'VINE'  ? VINE_MAX  + nextFloat(sim.prng) * 20
            : 0;
-  sim.grid[yi * sim.width + xi] = { type, lifetime: lt, gravity };
+  sim.grid[yi * sim.width + xi] = { type, lifetime: lt, gravity, material };
 }
 
 /** Convenience: random float from the sim PRNG. Used by effects.ts. */
@@ -97,7 +123,7 @@ export function updateSim(sim: SimState): void {
 
 function g(sim: SimState, x: number, y: number): SimParticle {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height)
-    return { type: 'SAND', lifetime: 0 }; // treat out-of-bounds as solid
+    return { type: 'SAND', lifetime: 0, material: M.STONE }; // treat out-of-bounds as solid
   return sim.grid[y * sim.width + x];
 }
 
@@ -127,7 +153,7 @@ function resolveCollision(sim: SimState, source: SimParticle, x: number, y: numb
   const waterHeat = (source.type === 'WATER' && (target.type === 'FIRE' || target.type === 'SPARK'))
     || (isHot && target.type === 'WATER');
   if (waterHeat) {
-    sim.grid[y * sim.width + x] = { type: 'SMOKE', lifetime: 25 };
+    sim.grid[y * sim.width + x] = { type: 'SMOKE', lifetime: 25, material: M.VOID };
     return;
   }
 
@@ -135,19 +161,22 @@ function resolveCollision(sim: SimState, source: SimParticle, x: number, y: numb
   if (isHot && target.type === 'WALL') {
     const i = y * sim.width + x;
     const durability = target.lifetime - 1;
-    sim.grid[i] = durability <= 0 ? { type: 'EMPTY', lifetime: 0 } : { ...target, lifetime: durability };
+    // { ...target, lifetime: durability } preserves target.material via spread
+    sim.grid[i] = durability <= 0
+      ? { type: 'EMPTY', lifetime: 0, material: M.VOID }
+      : { ...target, lifetime: durability };
     return;
   }
 
   // Fire/spark ignites vine → vine becomes fire
   if (isHot && target.type === 'VINE') {
-    sim.grid[y * sim.width + x] = { type: 'FIRE', lifetime: FIRE_MAX, owner: target.owner };
+    sim.grid[y * sim.width + x] = { type: 'FIRE', lifetime: FIRE_MAX, owner: target.owner, material: M.FIRE };
     return;
   }
 
   // Ice melts to water when hit by fire/spark, extinguishing the heat source context
   if (isHot && target.type === 'ICE') {
-    sim.grid[y * sim.width + x] = { type: 'WATER', lifetime: 0 };
+    sim.grid[y * sim.width + x] = { type: 'WATER', lifetime: 0, material: M.WATER };
     return;
   }
 
@@ -197,15 +226,15 @@ function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void
     const nx = x + dx, ny = y + dy;
     if (nx < 0 || nx >= sim.width || ny < 0 || ny >= sim.height) continue;
     const neighbor = g(sim, nx, ny);
-    // Water extinguishes adjacent fire
+    // Water extinguishes adjacent fire — special-case high removal probability
     if (neighbor.type === 'FIRE') {
-      sim.grid[ny * sim.width + nx] = { type: 'SMOKE', lifetime: 25 };
-      sim.grid[y * sim.width + x]   = { type: 'EMPTY', lifetime: 0 };
+      sim.grid[ny * sim.width + nx] = { type: 'SMOKE', lifetime: 25, material: M.VOID };
+      sim.grid[y * sim.width + x]   = { type: 'EMPTY', lifetime: 0, material: M.VOID };
       return;
     }
     // Water adjacent to ICE has a chance to freeze (propagating freeze)
     if (neighbor.type === 'ICE' && chance(sim.prng, 0.04)) {
-      sim.grid[y * sim.width + x] = { type: 'ICE', lifetime: ICE_MAX };
+      sim.grid[y * sim.width + x] = { type: 'ICE', lifetime: ICE_MAX, material: M.ICE };
       return;
     }
   }
@@ -218,8 +247,8 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
   p.lifetime--;
   if (p.lifetime <= 0) {
     sim.grid[y * sim.width + x] = chance(sim.prng, 0.35)
-      ? { type: 'SMOKE', lifetime: SMOKE_MAX }
-      : { type: 'EMPTY', lifetime: 0 };
+      ? { type: 'SMOKE', lifetime: SMOKE_MAX, material: M.VOID }
+      : { type: 'EMPTY', lifetime: 0, material: M.VOID };
     return;
   }
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, 1], [0, -1]] as [number, number][]) {
@@ -228,17 +257,17 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
     const neighbor = g(sim, nx, ny);
     // Water quenches fire immediately
     if (neighbor.type === 'WATER') {
-      sim.grid[y  * sim.width + x]  = { type: 'SMOKE', lifetime: 20 };
-      sim.grid[ny * sim.width + nx] = { type: 'EMPTY', lifetime: 0 };
+      sim.grid[y  * sim.width + x]  = { type: 'SMOKE', lifetime: 20, material: M.VOID };
+      sim.grid[ny * sim.width + nx] = { type: 'EMPTY', lifetime: 0, material: M.VOID };
       return;
     }
     // Fire aggressively spreads into adjacent vine (high 40% chance each neighbor)
     if (neighbor.type === 'VINE' && chance(sim.prng, 0.40)) {
-      sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX, owner: neighbor.owner };
+      sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX, owner: neighbor.owner, material: M.FIRE };
     }
     // Fire melts adjacent ice (slower, low chance — heat radiates)
     if (neighbor.type === 'ICE' && chance(sim.prng, 0.08)) {
-      sim.grid[ny * sim.width + nx] = { type: 'WATER', lifetime: 0 };
+      sim.grid[ny * sim.width + nx] = { type: 'WATER', lifetime: 0, material: M.WATER };
     }
   }
   if (y - 1 >= 0 && chance(sim.prng, 0.25) && tryMove(sim, moved, x, y, x, y - 1)) {
@@ -248,7 +277,7 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
     const dx = chance(sim.prng, 0.5) ? 1 : -1;
     const nx = x + dx;
     if (nx >= 0 && nx < sim.width && isEmpty(sim, nx, y)) {
-      sim.grid[y * sim.width + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4) };
+      sim.grid[y * sim.width + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4), material: M.FIRE };
     } else if (nx >= 0 && nx < sim.width) {
       resolveCollision(sim, p, nx, y);
     }
@@ -257,7 +286,7 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
 
 function stepSmoke(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
-  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0 }; return; }
+  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0, material: M.VOID }; return; }
   if (y - 1 >= 0 && chance(sim.prng, 0.35) && tryMove(sim, moved, x, y, x, y - 1)) {
     return;
   }
@@ -269,12 +298,12 @@ function stepSmoke(sim: SimState, moved: Uint8Array, x: number, y: number, p: Si
 
 function stepSpark(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimParticle): void {
   p.lifetime--;
-  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0 }; return; }
+  if (p.lifetime <= 0) { sim.grid[y * sim.width + x] = { type: 'EMPTY', lifetime: 0, material: M.VOID }; return; }
   if (chance(sim.prng, 0.08)) {
     const nx = x + (chance(sim.prng, 0.5) ? 1 : -1);
     const ny = y + (chance(sim.prng, 0.5) ? 1 : -1);
     if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
-      sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX };
+      sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX, material: M.FIRE };
     } else if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height) {
       resolveCollision(sim, p, nx, ny);
     }
@@ -289,7 +318,7 @@ function stepIce(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimP
   // Natural slow melt over time
   p.lifetime -= 0.5;  // effectively halved decay vs FIRE
   if (p.lifetime <= 0) {
-    sim.grid[y * sim.width + x] = { type: 'WATER', lifetime: 0 };
+    sim.grid[y * sim.width + x] = { type: 'WATER', lifetime: 0, material: M.WATER };
     return;
   }
   // Melt when adjacent to fire or spark — turns ICE to water and creates steam
@@ -298,15 +327,16 @@ function stepIce(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimP
     if (nx < 0 || nx >= sim.width || ny < 0 || ny >= sim.height) continue;
     const neighbor = g(sim, nx, ny);
     if ((neighbor.type === 'FIRE' || neighbor.type === 'SPARK') && chance(sim.prng, 0.12)) {
-      sim.grid[y  * sim.width + x]  = { type: 'WATER', lifetime: 0 };
-      sim.grid[ny * sim.width + nx] = { type: 'SMOKE', lifetime: 20 };
+      sim.grid[y  * sim.width + x]  = { type: 'WATER', lifetime: 0, material: M.WATER };
+      sim.grid[ny * sim.width + nx] = { type: 'SMOKE', lifetime: 20, material: M.VOID };
       return;
     }
     // Propagate freeze to adjacent water (chain-freeze, slow)
     if (neighbor.type === 'WATER' && chance(sim.prng, 0.025)) {
-      sim.grid[ny * sim.width + nx] = { type: 'ICE', lifetime: ICE_MAX };
+      sim.grid[ny * sim.width + nx] = { type: 'ICE', lifetime: ICE_MAX, material: M.ICE };
     }
   }
+  void moved; // suppress unused variable warning — stepIce doesn't move
 }
 
 // VINE is a static organic particle that ignites easily near fire.
@@ -317,7 +347,7 @@ function stepVine(sim: SimState, x: number, y: number, p: SimParticle): void {
     if (nx < 0 || nx >= sim.width || ny < 0 || ny >= sim.height) continue;
     const neighbor = g(sim, nx, ny);
     if ((neighbor.type === 'FIRE' || neighbor.type === 'SPARK') && chance(sim.prng, 0.25)) {
-      sim.grid[y * sim.width + x] = { type: 'FIRE', lifetime: FIRE_MAX, owner: p.owner };
+      sim.grid[y * sim.width + x] = { type: 'FIRE', lifetime: FIRE_MAX, owner: p.owner, material: M.FIRE };
       return;
     }
   }
@@ -349,6 +379,8 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
   for (let i = 0; i < grid.length; i++) {
     const p = grid[i];
     const pi = i * 4;
+    // Cell render color = stored color if present; otherwise particle-type default.
+    // Material type is physics-only and does NOT override the visual color.
     const [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
     // VISUAL-ONLY: fire/spark flicker and ice shimmer use Math.random — not gameplay-affecting.
     const fireJitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;

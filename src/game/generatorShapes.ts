@@ -1,5 +1,6 @@
 import { CARD_DEFS } from './cards';
 import type { Owner, SimState, UnitInstance } from './types';
+import { MaterialType } from './materials';
 
 export type StructurePixel = { dx: number; dy: number; color: string };
 
@@ -76,7 +77,7 @@ export function placeGeneratorParticles(sim: SimState, unit: UnitInstance): void
     if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
     const i = y * sim.width + x;
     if (sim.grid[i].type === 'CORE') continue;
-    sim.grid[i] = { type: 'WALL', lifetime: 1, owner: unit.owner, color: p.color, structureUid: unit.uid };
+    sim.grid[i] = { type: 'WALL', lifetime: 1, owner: unit.owner, color: p.color, structureUid: unit.uid, material: MaterialType.STONE };
   }
 }
 
@@ -92,6 +93,6 @@ export function canPlaceGeneratorParticles(sim: SimState, unit: UnitInstance): b
 
 export function clearGeneratorParticles(sim: SimState, uid: string): void {
   for (let i = 0; i < sim.grid.length; i++) {
-    if (sim.grid[i].structureUid === uid) sim.grid[i] = { type: 'EMPTY', lifetime: 0 };
+    if (sim.grid[i].structureUid === uid) sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
   }
 }

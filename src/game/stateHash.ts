@@ -38,6 +38,7 @@ const TYPE_INDEX: Record<ParticleType, number> = {
   EMPTY: 0, WATER: 1, FIRE: 2, SAND: 3, SMOKE: 4, SPARK: 5, CORE: 6, WALL: 7, ICE: 8, VINE: 9,
 };
 
+
 function hashSimState(h: number, sim: SimState): number {
   h = djb2Update(h, sim.prng.seed);
   const { grid } = sim;
@@ -47,6 +48,8 @@ function hashSimState(h: number, sim: SimState): number {
     if (p.type !== 'EMPTY') {
       // Include lifetime for non-empty cells — particles age deterministically.
       h = djb2Update(h, p.lifetime | 0);
+      // Material type is authoritative — affects damage outcomes and must match across clients.
+      h = djb2Update(h, p.material);
       h = djb2Update(h, p.gravity ?? 1);
       h = hashString(h, p.owner ?? '');
       h = hashString(h, p.color ?? '');
