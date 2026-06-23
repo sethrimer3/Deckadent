@@ -1,6 +1,6 @@
 import type { GameState, UnitInstance, Owner } from './types';
 import { CARD_DEFS } from './cards';
-import { newUid, startTurn, countCoreCells } from './state';
+import { newUid, startTurn, countCoreCells, drawCard } from './state';
 import { isPhysicallyAlive } from './physicalIntegrity';
 import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
@@ -8,7 +8,7 @@ import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
 import { canPlaceGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 import { destroyDeadGenerators } from './buildingDamage';
-import { isSpellPointInCastingZone } from './spellPlacement';
+import { isPointInPlacementZone } from './spellPlacement';
 import { canIssueTurnCommand, advancePlanningTurn } from './matchFlow';
 
 export function getActive(gs: GameState) {
@@ -138,12 +138,10 @@ export function playCard(
     // Starting generators are placed directly via state.ts and bypass playCard.
     if (!placement) return false;
     if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
-    const halfY = SIM_H / 2;
-    if (owner === 'player' && placement.y < halfY) {
-      gs.combatLog.push('Generators must be placed in the lower half of the field.');
+    if (!isPointInPlacementZone(owner, placement.y)) {
+      if (owner === 'player') gs.combatLog.push('Cards can only be placed in your 40% deployment zone.');
       return false;
     }
-    if (owner === 'enemy'  && placement.y >= halfY) return false;
     const allUnitsG = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
     if (overlapsExistingUnit(allUnitsG, placement.x, placement.y)) {
       if (owner === 'player') gs.combatLog.push('Cannot place generator — overlaps another unit.');
@@ -179,12 +177,10 @@ export function playCard(
   // ── CREATURE ───────────────────────────────────────────────────────────────
   if (def.type === 'CREATURE') {
     if (!placement) return false;
-    const halfY = SIM_H / 2;
-    if (owner === 'player' && placement.y < halfY) {
-      gs.combatLog.push('Creatures must be placed in the lower half of the field.');
+    if (!isPointInPlacementZone(owner, placement.y)) {
+      if (owner === 'player') gs.combatLog.push('Cards can only be placed in your 40% deployment zone.');
       return false;
     }
-    if (owner === 'enemy'  && placement.y >= halfY) return false;
     if (placement.x < 0 || placement.x >= SIM_W || placement.y < 0 || placement.y >= SIM_H) return false;
     const allUnitsC = [...gs.player.generators, ...gs.player.creatures, ...gs.enemy.generators, ...gs.enemy.creatures];
     if (overlapsExistingUnit(allUnitsC, placement.x, placement.y)) {
@@ -235,7 +231,7 @@ export function playCard(
       targetName = `${targetBase} base`;
     } else {
       if (placement!.x < 0 || placement!.x >= SIM_W || placement!.y < 0 || placement!.y >= SIM_H) return false;
-      if (!isSpellPointInCastingZone(owner, placement!.y)) {
+      if (!isPointInPlacementZone(owner, placement!.y)) {
         if (owner === 'player') gs.combatLog.push('Spells can only be placed in your casting zone.');
         return false;
       }
@@ -264,9 +260,10 @@ export function playCard(
     if (!placement) return false;
     const { x, y } = placement;
     if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) return false;
-    const halfY = SIM_H / 2;
-    if (owner === 'player' && y < halfY) return false;
-    if (owner === 'enemy'  && y >= halfY) return false;
+    if (!isPointInPlacementZone(owner, y)) {
+      if (owner === 'player') gs.combatLog.push('Cards can only be placed in your 40% deployment zone.');
+      return false;
+    }
 
     const shape = def.structureShape ?? 'wall_line';
     const radius = structureRadius(shape);
@@ -355,6 +352,24 @@ export function destroyDeadUnits(gs: GameState): void {
       gs.combatLog.push(`${CARD_DEFS[u.defId].name} was destroyed!`);
     ps.creatures  = ps.creatures.filter(u => u.hp > 0);
   }
+}
+
+const REDRAW_COSTS = [0, 1, 2, 3] as const;
+
+/** Discard one hand card to draw a replacement. Each turn allows costs 0, 1, 2, then 3. */
+export function redrawCard(gs: GameState, cardUid: string): boolean {
+  const ps = gs.turn === 'player' ? gs.player : gs.enemy;
+  const cost = REDRAW_COSTS[ps.redrawsThisTurn];
+  const cardIndex = ps.hand.findIndex(card => card.uid === cardUid);
+  if (gs.phase !== 'main' || cost === undefined || cardIndex < 0 || ps.energy < cost || ps.deck.length === 0) return false;
+  const [discarded] = ps.hand.splice(cardIndex, 1);
+  ps.energy -= cost;
+  // Draw before moving the selected card to discard so it cannot immediately return.
+  drawCard(ps, gs.prng);
+  ps.discard.push(discarded);
+  ps.redrawsThisTurn++;
+  gs.combatLog.push(`${gs.turn === 'player' ? 'Player' : 'Opponent'} redraws ${discarded.defId} for ${cost} energy.`);
+  return true;
 }
 
 export function checkWinLoss(gs: GameState): void {

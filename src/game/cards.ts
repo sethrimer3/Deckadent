@@ -147,18 +147,45 @@ export const CARD_DEFS: Record<string, CardDef> = {
 export const PLAYER_STARTING_DECK: string[] = [
   'spark_core', 'spark_core',
   'spring_core', 'spring_core',
-  'emberling', 'emberling',
-  'water_wisp', 'water_wisp',
-  'stone_mite',
-  'splash', 'splash',
-  'ignite',
-  'frost_shard',
-  'collapse',
-  'stone_wall', 'stone_wall',
-  'channel',
-  'firebreak',
-  'vine_tangle',
+  'emberling', 'emberling', 'emberling', 'emberling',
+  'water_wisp', 'water_wisp', 'water_wisp', 'water_wisp',
+  'stone_mite', 'stone_mite', 'stone_mite',
+  'splash', 'ignite', 'frost_shard', 'collapse',
+  'stone_wall',
 ];
+
+export const DECK_SIZE = 20;
+export const MIN_GENERATORS = 4;
+export const MIN_CREATURES = 11;
+export const MIN_SPELLS = 4;
+
+export interface DeckValidation {
+  valid: boolean;
+  generators: number;
+  creatures: number;
+  spells: number;
+  message: string;
+}
+
+/** The player deck must have reliable energy, actions, and a creature majority. */
+export function validatePlayerDeck(deckIds: readonly string[]): DeckValidation {
+  const counts = { generators: 0, creatures: 0, spells: 0 };
+  for (const id of deckIds) {
+    const type = CARD_DEFS[id]?.type;
+    if (type === 'GENERATOR') counts.generators++;
+    else if (type === 'CREATURE') counts.creatures++;
+    else if (type === 'SPELL') counts.spells++;
+  }
+  const valid = deckIds.length === DECK_SIZE
+    && counts.generators >= MIN_GENERATORS
+    && counts.creatures >= MIN_CREATURES
+    && counts.spells >= MIN_SPELLS
+    && counts.creatures > DECK_SIZE / 2;
+  const message = valid
+    ? 'Deck is ready.'
+    : `Need ${DECK_SIZE} cards: ${Math.max(0, MIN_GENERATORS - counts.generators)} generator, ${Math.max(0, MIN_CREATURES - counts.creatures)} creature, and ${Math.max(0, MIN_SPELLS - counts.spells)} spell minimum remaining.`;
+  return { valid, ...counts, message };
+}
 
 export const ENEMY_STARTING_DECK: string[] = [
   'spark_core', 'spark_core',

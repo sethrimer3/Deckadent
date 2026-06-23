@@ -61,6 +61,7 @@ function hashSimState(h: number, sim: SimState): number {
 
 function hashPlayerState(h: number, ps: PlayerState): number {
   h = djb2Update(h, ps.energy);
+  h = djb2Update(h, ps.redrawsThisTurn);
   h = djb2Update(h, ps.base.hp);
   h = djb2Update(h, ps.base.simX);
   h = djb2Update(h, ps.base.simY);

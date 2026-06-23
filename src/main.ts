@@ -52,8 +52,8 @@ function render(): void {
 }
 
 let session = createSession('frozen-hotseat');
-function startMatch(mode: GameMode, address?: string): void {
-  Object.assign(gs, createInitialGameState(undefined, mode));
+function startMatch(mode: GameMode, address?: string, playerDeckIds?: string[]): void {
+  Object.assign(gs, createInitialGameState(undefined, mode, playerDeckIds));
   session = createSession(mode);
   session.roomAddress = address;
   if (mode === 'frozen-hotseat') beginFrozenMatch(gs);

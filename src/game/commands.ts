@@ -1,8 +1,8 @@
 import type { GameState, Owner } from './types';
-import { playCard, attackTarget, endTurn } from './rules';
+import { playCard, attackTarget, endTurn, redrawCard } from './rules';
 import { SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
-import { isSpellPointInCastingZone } from './spellPlacement';
+import { isPointInPlacementZone } from './spellPlacement';
 import { canIssueTurnCommand } from './matchFlow';
 export type CommandSource = 'local' | 'remote' | 'ai';
 type CommandMeta = { sequence?: number; source?: CommandSource };
@@ -36,6 +36,12 @@ export type Command =
       owner: Owner;
     } & CommandMeta)
   | ({
+      kind: 'redrawCard';
+      tick: number;
+      owner: Owner;
+      cardUid: string;
+    } & CommandMeta)
+  | ({
       kind: 'selectTarget';
       tick: number;
       owner: Owner;
@@ -58,7 +64,7 @@ export function clearCommandLog(): void { _commandLog.length = 0; _rejectedLog.l
 // ---------------------------------------------------------------------------
 
 /** Commands that require cmd.owner to match the active turn player. */
-const TURN_SENSITIVE: Command['kind'][] = ['playCard', 'attackTarget', 'endTurn'];
+const TURN_SENSITIVE: Command['kind'][] = ['playCard', 'attackTarget', 'endTurn', 'redrawCard'];
 
 /** The opponent of a given owner. */
 function opponent(o: Owner): Owner { return o === 'player' ? 'enemy' : 'player'; }
@@ -87,23 +93,10 @@ function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | 
     const card = ps.hand.find(c => c.uid === cmd.cardUid);
     if (card) {
       const def = CARD_DEFS[card.defId];
-      if (def.type === 'SPELL' && !isSpellPointInCastingZone(cmd.owner, y)) {
+      if (!isPointInPlacementZone(cmd.owner, y)) {
         return cmd.owner === 'player'
-          ? 'Spells can only be placed in your casting zone'
-          : 'enemy spell must be placed in its casting zone';
-      }
-      const halfY = SIM_H / 2;
-      if (def.type === 'CREATURE') {
-        if (cmd.owner === 'player' && y < halfY) return `player creature must be placed in lower half (y >= ${halfY})`;
-        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy creature must be placed in upper half (y < ${halfY})`;
-      }
-      if (def.type === 'GENERATOR') {
-        if (cmd.owner === 'player' && y < halfY) return `player generator must be placed in lower half (y >= ${halfY})`;
-        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy generator must be placed in upper half (y < ${halfY})`;
-      }
-      if (def.type === 'STRUCTURE') {
-        if (cmd.owner === 'player' && y < halfY) return `player structure must be placed in lower half (y >= ${halfY})`;
-        if (cmd.owner === 'enemy'  && y >= halfY) return `enemy structure must be placed in upper half (y < ${halfY})`;
+          ? (def.type === 'SPELL' ? 'Spells can only be placed in your casting zone' : 'Cards can only be placed in your 40% deployment zone')
+          : 'enemy card must be placed in its 40% deployment zone';
       }
     }
   }
@@ -166,6 +159,9 @@ export function applyCommand(gs: GameState, cmd: Command, opts: ApplyOptions = {
     case 'endTurn':
       endTurn(gs);
       ok = true;
+      break;
+    case 'redrawCard':
+      ok = redrawCard(gs, cmd.cardUid);
       break;
     case 'selectTarget':
       // UI coordination only — no authoritative state change.

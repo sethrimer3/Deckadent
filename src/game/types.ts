@@ -148,6 +148,8 @@ export interface PlayerState {
   generators: UnitInstance[];
   creatures: UnitInstance[];
   energy: number;
+  /** Number of hand redraws used during this turn (maximum four). */
+  redrawsThisTurn: number;
   /** Physical base/core entity on the battlefield. */
   base: BaseInstance;
 }

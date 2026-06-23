@@ -1,12 +1,12 @@
 import type { GameState, UnitInstance, CardInstance, GameMode } from './types';
-import { CARD_DEFS } from './cards';
+import { CARD_DEFS, DECK_SIZE, MIN_CREATURES, MIN_GENERATORS, MIN_SPELLS, PLAYER_STARTING_DECK, validatePlayerDeck } from './cards';
 import { canPlayCard } from './rules';
 import { applyCommand } from './commands';
 import { hashHex } from './stateHash';
 import { runEnemyTurn } from './ai';
 import { mountCardArtCanvases } from './cardArt';
 import { structureRadius } from './structureShapes';
-import { getSpellPlacementZone, isSpellPointInCastingZone } from './spellPlacement';
+import { getSpellPlacementZone, isPointInPlacementZone } from './spellPlacement';
 import { ownerLabel } from './matchFlow';
 
 const ELEMENT_COLOR: Record<string, string> = {
@@ -26,7 +26,22 @@ const ELEMENT_BG: Record<string, string> = {
 let _gs: GameState;
 let _renderFn: () => void;
 let _canvas: HTMLCanvasElement;
-let _startMatch: ((mode: GameMode, address?: string) => void) | null = null;
+let _startMatch: ((mode: GameMode, address?: string, playerDeckIds?: string[]) => void) | null = null;
+let _menuView: 'modes' | 'deck' = 'modes';
+const DECK_STORAGE_KEY = 'deckadent-player-deck-v1';
+let _playerDeck = loadPlayerDeck();
+
+function loadPlayerDeck(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DECK_STORAGE_KEY) ?? 'null');
+    if (Array.isArray(saved) && saved.every(id => typeof id === 'string' && CARD_DEFS[id])) return saved;
+  } catch { /* Use the supplied legal deck. */ }
+  return [...PLAYER_STARTING_DECK];
+}
+
+function savePlayerDeck(): void {
+  localStorage.setItem(DECK_STORAGE_KEY, JSON.stringify(_playerDeck));
+}
 
 // ─── Drag state ───────────────────────────────────────────────────────────────
 // Module-level so drawDragOverlay can read it every animation frame.
@@ -56,7 +71,7 @@ export function initUI(
   gs: GameState,
   canvas: HTMLCanvasElement,
   renderFn: () => void,
-  startMatch?: (mode: GameMode, address?: string) => void,
+  startMatch?: (mode: GameMode, address?: string, playerDeckIds?: string[]) => void,
   _getSession?: () => unknown,
 ): void {
   _gs = gs;
@@ -85,7 +100,11 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     ctx.fillText('SIM FROZEN', 8, 15);
     ctx.restore();
   }
-  if (phase === 'targeting-spell' && gs.pendingSpellCardUid) {
+  const showPlacementZone = (phase === 'targeting-spell' && gs.pendingSpellCardUid)
+    || (phase === 'placing-generator' && gs.pendingGeneratorCardUid)
+    || (phase === 'placing-creature' && gs.pendingCreatureCardUid)
+    || (phase === 'placing-structure' && gs.pendingStructureCardUid);
+  if (showPlacementZone) {
     const zone = getSpellPlacementZone('player');
     ctx.save();
     ctx.fillStyle = 'rgba(35, 95, 120, 0.18)';
@@ -108,7 +127,7 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     const sy    = gs.player.base.simY;
     const tx    = _dragCurrent.x;
     const ty    = _dragCurrent.y;
-    const valid = isSpellPointInCastingZone('player', ty);
+    const valid = isPointInPlacementZone('player', ty);
 
     ctx.save();
     // Trajectory line
@@ -163,8 +182,7 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     const color = _EL_COLOR[def.element] ?? '#fff';
     const { x, y } = _dragCurrent;
 
-    // Snap to lower half (player territory)
-    const validY = y >= ctx.canvas.height / 2;
+    const validY = isPointInPlacementZone('player', y);
     const boxColor = validY ? color : '#e44';
 
     ctx.save();
@@ -209,7 +227,7 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     const color  = _EL_COLOR[def.element] ?? '#aaa';
     const radius = structureRadius(def.structureShape ?? 'wall_line');
     const { x, y } = _dragCurrent;
-    const validY = y >= ctx.canvas.height / 2;
+    const validY = isPointInPlacementZone('player', y);
     const outlineColor = validY ? color : '#e44';
 
     ctx.save();
@@ -274,7 +292,7 @@ function handCard(card: CardInstance, gs: GameState): string {
     playable ? 'playable' : 'unplayable',
     selected ? 'selected' : '',
   ].join(' ');
-  return `<div class="${cls}" data-card-uid="${card.uid}"
+  return `<div class="${cls}" data-card-uid="${card.uid}" draggable="true"
       style="border-color:${ELEMENT_COLOR[def.element]}">
     <div class="card-cost">${def.cost}</div>
     <div class="card-name">${def.name}</div>
@@ -288,12 +306,31 @@ function handCard(card: CardInstance, gs: GameState): string {
   </div>`;
 }
 
+function renderDeckBuilder(appEl: HTMLElement): void {
+  const validation = validatePlayerDeck(_playerDeck);
+  const counts = new Map<string, number>();
+  for (const id of _playerDeck) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const cards = Object.keys(CARD_DEFS).map(id => {
+    const def = CARD_DEFS[id], count = counts.get(id) ?? 0;
+    return `<div class="deck-card" style="border-color:${ELEMENT_COLOR[def.element]}"><div><b>${def.name}</b><span>${def.type.toLowerCase()} · ${def.cost} energy</span></div><div class="deck-card-controls"><button data-deck-remove="${id}" ${count ? '' : 'disabled'}>−</button><b>${count}</b><button data-deck-add="${id}" ${_playerDeck.length >= DECK_SIZE ? 'disabled' : ''}>+</button></div></div>`;
+  }).join('');
+  appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box deck-builder"><div class="mode-kicker">DECKADENT</div><h1>Deck Builder</h1><p>Build a ${DECK_SIZE}-card deck. Creatures must be the majority.</p><div class="deck-requirements"><span>Generators <b>${validation.generators}/${MIN_GENERATORS}</b></span><span>Creatures <b>${validation.creatures}/${MIN_CREATURES}</b></span><span>Spells <b>${validation.spells}/${MIN_SPELLS}</b></span><span>Cards <b>${_playerDeck.length}/${DECK_SIZE}</b></span></div><div class="deck-validity ${validation.valid ? 'valid' : 'invalid'}">${validation.message}</div><div class="deck-card-list">${cards}</div><button class="mode-option" data-deck-reset><b>Restore starter deck</b></button><button class="mode-option" data-deck-back><b>Back to game modes</b></button></div></div>`;
+  appEl.querySelectorAll('[data-deck-add]').forEach(el => el.addEventListener('click', () => { _playerDeck.push((el as HTMLElement).dataset.deckAdd!); savePlayerDeck(); renderUI(_gs, appEl); }));
+  appEl.querySelectorAll('[data-deck-remove]').forEach(el => el.addEventListener('click', () => { const id = (el as HTMLElement).dataset.deckRemove!; const index = _playerDeck.lastIndexOf(id); if (index >= 0) _playerDeck.splice(index, 1); savePlayerDeck(); renderUI(_gs, appEl); }));
+  appEl.querySelector('[data-deck-reset]')?.addEventListener('click', () => { _playerDeck = [...PLAYER_STARTING_DECK]; savePlayerDeck(); renderUI(_gs, appEl); });
+  appEl.querySelector('[data-deck-back]')?.addEventListener('click', () => { _menuView = 'modes'; renderUI(_gs, appEl); });
+}
+
 // ─── Main render ─────────────────────────────────────────────────────────────
 
 export function renderUI(gs: GameState, appEl: HTMLElement): void {
   if (gs.matchPhase === 'mode-select') {
+    if (_menuView === 'deck') { renderDeckBuilder(appEl); return; }
+    const deckValid = validatePlayerDeck(_playerDeck).valid;
     appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box"><div class="mode-kicker">DECKADENT</div><h1>Game Mode</h1><p>Choose a local or network session.</p><button data-mode="frozen-hotseat" class="mode-option"><b>Frozen Turn-Based Hotseat</b><span>Playable now · shared device · planning freezes simulation.</span></button><button data-mode="realtime-hotseat" class="mode-option"><b>Real-Time Hotseat</b><span>Playable now · shared device/mobile · simulation runs continuously.</span></button><button data-mode="realtime-lan-host" class="mode-option"><b>Real-Time LAN — Host</b><span>Host-authoritative session scaffold.</span></button><button data-mode="realtime-lan-client" class="mode-option"><b>Real-Time LAN — Join</b><span>Client mirror scaffold · enter host address.</span></button><button class="mode-option disabled" disabled><b>Online Play</b><span>Coming later</span></button></div></div>`;
-    appEl.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => { const mode = (el as HTMLElement).dataset.mode as GameMode; const address = mode === 'realtime-lan-client' ? window.prompt('Host WebSocket address', 'ws://192.168.1.10:8080') ?? undefined : undefined; if (address !== undefined || mode !== 'realtime-lan-client') _startMatch?.(mode, address); }));
+    appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box"><div class="mode-kicker">DECKADENT</div><h1>Game Mode</h1><p>Choose a local or network session.</p><button data-open-deck class="mode-option"><b>Customize Deck</b><span>${validatePlayerDeck(_playerDeck).message}</span></button><button data-mode="frozen-hotseat" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Frozen Turn-Based Hotseat</b><span>Shared device; planning freezes simulation.</span></button><button data-mode="realtime-hotseat" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time Hotseat</b><span>Shared device; simulation runs continuously.</span></button><button data-mode="realtime-lan-host" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time LAN — Host</b><span>Host-authoritative session scaffold.</span></button><button data-mode="realtime-lan-client" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time LAN — Join</b><span>Client mirror scaffold; enter host address.</span></button><button class="mode-option disabled" disabled><b>Online Play</b><span>Coming later</span></button></div></div>`;
+    appEl.querySelector('[data-open-deck]')?.addEventListener('click', () => { _menuView = 'deck'; renderUI(_gs, appEl); });
+    appEl.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => { const mode = (el as HTMLElement).dataset.mode as GameMode; const address = mode === 'realtime-lan-client' ? window.prompt('Host WebSocket address', 'ws://192.168.1.10:8080') ?? undefined : undefined; if (address !== undefined || mode !== 'realtime-lan-client') _startMatch?.(mode, address, [..._playerDeck]); }));
     return;
   }
   // In real-time hotseat this is the large mobile-safe active-side switch. The
@@ -353,13 +390,13 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     const sname = pendingCardName(gs, gs.pendingSpellCardUid);
     phaseMsg = `<div class="phase-msg">Cast <b>${sname || 'Spell'}</b> — <b>drag on the battlefield</b> to aim and release to fire. Or click an enemy unit / ⚔ button. Click elsewhere to cancel.</div>`;
   } else if (phase === 'placing-generator') {
-    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to position your generator, release to place. Generators produce energy each turn.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the highlighted lower 40%</b> to position your generator, then release to place.</div>`;
   } else if (phase === 'placing-creature') {
     const cname = pendingCardName(gs, gs.pendingCreatureCardUid);
-    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to aim <b>${cname || 'Creature'}</b>. The arrow shows its march path — release to deploy.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the highlighted lower 40%</b> to deploy <b>${cname || 'Creature'}</b>.</div>`;
   } else if (phase === 'placing-structure') {
     const stname = pendingCardName(gs, gs.pendingStructureCardUid);
-    phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to position <b>${stname || 'Structure'}</b>. The outline shows its footprint — release to place.</div>`;
+    phaseMsg = `<div class="phase-msg"><b>Drag in the highlighted lower 40%</b> to position <b>${stname || 'Structure'}</b>.</div>`;
   }
 
   const endTurnBtn = planning && !gs.aiActing
@@ -368,6 +405,8 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
 
   const logLines = gs.combatLog.slice(-12).map(l => `<div class="log-line">${l}</div>`).join('');
   const stateHash = hashHex(gs);
+  const redrawCost = [0, 1, 2, 3][player.redrawsThisTurn];
+  const canRedraw = planning && phase === 'main' && status === 'playing' && redrawCost !== undefined && player.energy >= redrawCost && player.deck.length > 0;
 
   appEl.innerHTML = `
 <div class="game-root">
@@ -415,6 +454,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     <div class="hand-cards">${handCards}</div>
     <div class="controls">
       ${endTurnBtn}
+      <div class="discard-drop ${canRedraw ? '' : 'disabled'}" data-discard-drop><b>Discard & Draw</b><span>${redrawCost === undefined ? 'No redraws left this turn' : canRedraw ? `Drag a card here · ${redrawCost} energy` : player.deck.length === 0 ? 'Deck empty' : `Need ${redrawCost} energy`}</span></div>
       <span class="deck-info">Deck ${player.deck.length} · Discard ${player.discard.length}</span>
     </div>
   </div>
@@ -473,6 +513,12 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   });
 
   appEl.querySelectorAll('[data-card-uid]').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      const uid = (el as HTMLElement).dataset.cardUid!;
+      const transfer = (e as DragEvent).dataTransfer;
+      transfer?.setData('text/plain', uid);
+      if (transfer) transfer.effectAllowed = 'move';
+    });
     el.addEventListener('click', e => {
       e.stopPropagation();
       if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
@@ -525,6 +571,19 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
       gs.selectedAttackerUid = null;
       _renderFn();
     });
+  });
+
+  const discardDrop = appEl.querySelector('[data-discard-drop]');
+  discardDrop?.addEventListener('dragover', e => {
+    if (!(discardDrop as HTMLElement).classList.contains('disabled')) e.preventDefault();
+  });
+  discardDrop?.addEventListener('drop', e => {
+    e.preventDefault();
+    if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
+    const cardUid = (e as DragEvent).dataTransfer?.getData('text/plain');
+    if (!cardUid) return;
+    applyCommand(gs, { kind: 'redrawCard', tick: gs.tick, owner: gs.turn, cardUid, source: 'local' });
+    _renderFn();
   });
 
   appEl.querySelectorAll('[data-attacker]').forEach(el => {

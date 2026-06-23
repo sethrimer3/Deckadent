@@ -152,6 +152,7 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
       : [makeUnit('spark_core', owner, 222, 32), makeUnit('spring_core', owner, 258, 32)],
     creatures: [],
     energy: 0,
+    redrawsThisTurn: 0,
     base: makeBase(owner),
   };
 }
@@ -161,7 +162,7 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
  * If seed is omitted, Date.now() is used but stored as initialSeed so the
  * run is always reproducible given that seed value.
  */
-export function createInitialGameState(seed?: number, gameMode: GameMode = 'frozen-hotseat'): GameState {
+export function createInitialGameState(seed?: number, gameMode: GameMode = 'frozen-hotseat', playerDeckIds: string[] = PLAYER_STARTING_DECK): GameState {
   // Reset UID counter so replay runs assign identical UIDs.
   resetUidCounter();
   const initialSeed = (seed ?? Date.now()) >>> 0;
@@ -173,7 +174,7 @@ export function createInitialGameState(seed?: number, gameMode: GameMode = 'froz
   // so the two PRNGs are independent and do not share outputs.
   const sim = createSimState(initialSeed + 1);
 
-  const player = makePlayerState(PLAYER_STARTING_DECK, 'player', prng);
+  const player = makePlayerState(playerDeckIds, 'player', prng);
   const enemy  = makePlayerState(ENEMY_STARTING_DECK,  'enemy',  prng);
 
   player.energy = player.generators.length;
@@ -231,6 +232,7 @@ export function drawCard(ps: PlayerState, prng: PRNGState): void {
 export function startTurn(gs: GameState): void {
   const ps = gs.turn === 'player' ? gs.player : gs.enemy;
   ps.energy = ps.generators.filter(isGeneratorOperational).length;
+  ps.redrawsThisTurn = 0;
   for (const c of ps.creatures) c.hasAttacked = false;
   drawCard(ps, gs.prng);
   gs.combatLog.push(`--- ${gs.turn === 'player' ? 'Player' : 'Enemy'} turn — Energy: ${ps.energy} ---`);

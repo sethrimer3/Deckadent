@@ -201,6 +201,20 @@ body {
 .mode-option:hover:not(:disabled) { background: #362858; border-color: #af86ff; }
 .mode-option span { color: #b9b0c8; font-size: 12px; }
 .mode-option.disabled { opacity: .45; cursor: not-allowed; }
+.deck-builder { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; text-align: left; }
+.deck-builder h1, .deck-builder > p, .deck-builder .mode-kicker { text-align: center; }
+.deck-requirements { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0 8px; }
+.deck-requirements span, .deck-validity { padding: 8px; border: 1px solid #51406f; border-radius: 5px; background: #171222; color: #c9bddb; font-size: 12px; }
+.deck-requirements b { display: block; color: #fff; margin-top: 2px; }
+.deck-validity.valid { color: #a9dfae; border-color: #4d8b5a; }
+.deck-validity.invalid { color: #ffc48e; border-color: #a06b41; }
+.deck-card-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 12px 0; }
+.deck-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border: 1px solid; border-radius: 6px; background: #1a1428; font-size: 12px; }
+.deck-card span { display: block; color: var(--text-dim); font-size: 10px; margin-top: 2px; }
+.deck-card-controls { display: flex; align-items: center; gap: 7px; }
+.deck-card-controls button { width: 25px; height: 25px; border: 1px solid #7557a8; border-radius: 4px; background: #302248; color: #fff; font-size: 17px; cursor: pointer; }
+.deck-card-controls button:disabled { opacity: .35; cursor: not-allowed; }
+@media (max-width: 520px) { .deck-requirements, .deck-card-list { grid-template-columns: 1fr 1fr; } }
 .simulation-msg { border-color: #7294a8; color: #c1d9e6; background: #182633; }
 
 .phase-msg {
@@ -247,6 +261,11 @@ body {
   flex: 1;
   padding-bottom: 2px;
 }
+.discard-drop { min-width: 132px; padding: 7px 10px; border: 1px dashed #c59a4f; border-radius: 6px; background: #2d2418; color: #ffe3a2; text-align: center; font-size: 11px; }
+.discard-drop b, .discard-drop span { display: block; }
+.discard-drop span { margin-top: 2px; color: #d8c3a0; font-size: 10px; }
+.discard-drop:not(.disabled):hover { border-color: #ffe28a; background: #45351c; }
+.discard-drop.disabled { opacity: .48; border-color: #665a49; color: #aaa; }
 
 /* ── Hand card ──────────────────────────────────────────────────────────────── */
 .hand-card {
