@@ -3,6 +3,7 @@ import { updateSim, renderSim, SIM_W, SIM_H } from './game/sandSim';
 import { createInitialGameState } from './game/state';
 import { initUI, renderUI, drawDragOverlay, isDragActive } from './game/ui';
 import { renderCreatureEntities, drawBattlefieldLabels } from './game/battlefieldEntities';
+import { renderShaderFx } from './game/shaderFx';
 import { resolveSimDamage } from './game/simDamage';
 import { updateCombatEffects } from './game/combatEffects';
 import { updateCreatureMovement } from './game/movement';
@@ -97,6 +98,7 @@ function loop(ts: number): void {
   // so we must re-clear and re-draw every frame while dragging to avoid overlay smearing.
   if (ticked || isDragActive()) {
     renderSim(ctx, gs.sim);
+    renderShaderFx(ctx, gs);
     renderCreatureEntities(ctx, gs);
     drawBattlefieldLabels(ctx, gs);
     if (ticked) updateDebugPanel();
