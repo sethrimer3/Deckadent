@@ -2,6 +2,7 @@ import type { BaseInstance, GameState, Owner, UnitInstance } from './types';
 import { addParticle, SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
 import { countCoreCells } from './state';
+import { isPhysicallyAlive } from './physicalIntegrity';
 import { MaterialType } from './materials';
 import { damageGeneratorCells } from './generatorShapes';
 import { destroyDeadGenerators, syncGeneratorHealth } from './buildingDamage';
@@ -183,7 +184,7 @@ function damageBaseCore(gs: GameState, base: BaseInstance | null, amount: number
     }
   }
   base.hp = countCoreCells(gs.sim, base);
-  if (base.hp === 0 && gs.status === 'playing') {
+  if (!isPhysicallyAlive(base.hp, base.originalParticleCount ?? base.maxHp) && gs.status === 'playing') {
     gs.status = base.owner === 'player' ? 'lose' : 'win';
     gs.combatLog.push(base.owner === 'player' ? 'Your base core was destroyed. You lose!' : 'Enemy base core was destroyed. You win!');
   }

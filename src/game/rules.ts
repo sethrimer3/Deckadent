@@ -1,6 +1,7 @@
 import type { GameState, UnitInstance, Owner } from './types';
 import { CARD_DEFS } from './cards';
 import { newUid, startTurn, countCoreCells } from './state';
+import { isPhysicallyAlive } from './physicalIntegrity';
 import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
@@ -352,12 +353,12 @@ export function checkWinLoss(gs: GameState): void {
   if (gs.status !== 'playing') return;
   const playerCores = countCoreCells(gs.sim, gs.player.base);
   const enemyCores  = countCoreCells(gs.sim, gs.enemy.base);
-  if (playerCores === 0) {
+  if (!isPhysicallyAlive(playerCores, gs.player.base.originalParticleCount ?? gs.player.base.maxHp)) {
     gs.status = 'lose';
     gs.combatLog.push('Your base core was destroyed. You lose!');
     return;
   }
-  if (enemyCores === 0) {
+  if (!isPhysicallyAlive(enemyCores, gs.enemy.base.originalParticleCount ?? gs.enemy.base.maxHp)) {
     gs.status = 'win';
     gs.combatLog.push('Enemy base core was destroyed. You win!');
   }

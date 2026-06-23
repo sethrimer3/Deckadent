@@ -2,10 +2,11 @@ import { chance } from './prng';
 import type { GameState, UnitInstance, ElementType } from './types';
 import { CARD_DEFS } from './cards';
 import { destroyDeadUnits, checkWinLoss } from './rules';
-import { countCoreCells } from './state';
+import { clearDetachedCoreCells, countCoreCells } from './state';
 import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RADIUS } from './footprint';
 import { MaterialType, MaterialTable, fireErosionProb } from './materials';
 import { syncGeneratorHealth } from './buildingDamage';
+import { isPhysicallyAlive } from './physicalIntegrity';
 
 // ---------------------------------------------------------------------------
 // Particle-overlap damage resolver — primary damage authority for Phase 4.
@@ -181,7 +182,10 @@ function erodeVineCells(gs: GameState): void {
 
 function syncBaseHp(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
+    clearDetachedCoreCells(gs.sim, ps.base);
     ps.base.hp = countCoreCells(gs.sim, ps.base);
+    ps.base.survivingParticleCount = ps.base.hp;
+    ps.base.maxHp = ps.base.originalParticleCount ?? ps.base.maxHp;
   }
 }
 
@@ -207,7 +211,7 @@ export function resolveSimDamage(gs: GameState): void {
   syncBaseHp(gs);
 
   for (const ps of [player, enemy]) {
-    if (ps.base.hp === 0 && shouldLog(`base_${ps.base.owner}`, gs.tick)) {
+    if (!isPhysicallyAlive(ps.base.survivingParticleCount ?? ps.base.hp, ps.base.originalParticleCount ?? ps.base.maxHp) && shouldLog(`base_${ps.base.owner}`, gs.tick)) {
       const lbl = ps.base.owner === 'player' ? 'Player' : 'Enemy';
       gs.combatLog.push(`${lbl} base core destroyed by particle erosion!`);
     }

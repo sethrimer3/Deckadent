@@ -11,6 +11,23 @@ export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
 export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature' | 'placing-structure';
 export type EffectKind = 'beam' | 'spray' | 'burst' | 'freeze';
+/** Default is die: detached physical fragments do not remain part of the entity. */
+export type SplitBehavior = 'die' | 'debris' | 'independent';
+
+/**
+ * Compatibility fields hp/maxHp mirror attached/original physical particles for
+ * physical entities. Creatures still use them as legacy abstract combat values
+ * until their rendered bodies are migrated into the particle simulation.
+ */
+export interface PhysicalIntegrityFields {
+  originalParticleCount?: number;
+  survivingParticleCount?: number;
+  /** Grid cell preferred when choosing the live connected component. */
+  anchorX?: number;
+  anchorY?: number;
+  canSplit?: boolean;
+  splitBehavior?: SplitBehavior;
+}
 
 // ---------------------------------------------------------------------------
 // CombatEffect — serializable, authoritative record of a pending sim event.
@@ -81,6 +98,8 @@ export interface CardDef {
   structureShape?: string;
   /** Override the EffectKind derived from element (e.g. frost_shard uses 'freeze'). */
   effectKind?: EffectKind;
+  /** Reserved for physical entities; defaults to 'die'. */
+  splitBehavior?: SplitBehavior;
 }
 
 export interface CardInstance {
@@ -92,7 +111,7 @@ export interface CardInstance {
 // Units, bases, players
 // ---------------------------------------------------------------------------
 
-export interface UnitInstance {
+export interface UnitInstance extends PhysicalIntegrityFields {
   uid: string;
   defId: string;
   hp: number;
@@ -106,7 +125,7 @@ export interface UnitInstance {
   maxCollisionEnergy?: number;
 }
 
-export interface BaseInstance {
+export interface BaseInstance extends PhysicalIntegrityFields {
   owner: Owner;
   hp: number;
   maxHp: number;

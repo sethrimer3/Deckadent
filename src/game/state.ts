@@ -5,6 +5,7 @@ import { CARD_DEFS, PLAYER_STARTING_DECK, ENEMY_STARTING_DECK } from './cards';
 import { createSimState } from './sandSim';
 import { initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 import { MaterialType } from './materials';
+import { findAttachedBody, isOperational } from './physicalIntegrity';
 
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
@@ -69,6 +70,11 @@ function makeBase(owner: Owner): BaseInstance {
     owner,
     hp: CORE_CELL_COUNT,
     maxHp: CORE_CELL_COUNT,
+    originalParticleCount: CORE_CELL_COUNT,
+    survivingParticleCount: CORE_CELL_COUNT,
+    anchorX: 160,
+    anchorY: owner === 'player' ? 304 : 16,
+    splitBehavior: 'die',
     simX: 160,
     simY: owner === 'player' ? 304 : 16,
   };
@@ -77,16 +83,21 @@ function makeBase(owner: Owner): BaseInstance {
 /** Count CORE cells in the sim grid belonging to a given base. */
 export function countCoreCells(sim: SimState, base: BaseInstance): number {
   const r = CORE_SEARCH_RADIUS;
-  let count = 0;
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      const x = base.simX + dx;
-      const y = base.simY + dy;
-      if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
-      if (sim.grid[y * sim.width + x].type === 'CORE') count++;
-    }
-  }
-  return count;
+  return findAttachedBody(sim, index => {
+    const x = index % sim.width, y = (index / sim.width) | 0;
+    return sim.grid[index].type === 'CORE' && Math.abs(x - base.simX) <= r && Math.abs(y - base.simY) <= r;
+  }, base.anchorX, base.anchorY).attachedIndices.length;
+}
+
+/** Default base behavior clears disconnected core shards after they cease to be alive. */
+export function clearDetachedCoreCells(sim: SimState, base: BaseInstance): void {
+  if ((base.splitBehavior ?? 'die') !== 'die') return;
+  const r = CORE_SEARCH_RADIUS;
+  const body = findAttachedBody(sim, index => {
+    const x = index % sim.width, y = (index / sim.width) | 0;
+    return sim.grid[index].type === 'CORE' && Math.abs(x - base.simX) <= r && Math.abs(y - base.simY) <= r;
+  }, base.anchorX, base.anchorY);
+  for (const index of body.detachedIndices) sim.grid[index] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
 }
 
 /**
@@ -110,9 +121,9 @@ function placeCoreAtBase(sim: SimState, base: BaseInstance): void {
   }
 }
 
-/** A generator becomes inert after losing more than 40% of its physical particles. */
+/** 60% means energy-producing; 20%-60% is damaged/inert; <=20% is destroyed. */
 export function isGeneratorOperational(unit: UnitInstance): boolean {
-  return unit.hp > 0 && unit.hp / unit.maxHp >= 0.6;
+  return isOperational(unit.survivingParticleCount ?? unit.hp, unit.originalParticleCount ?? unit.maxHp);
 }
 
 /** Solid simulation shell matching the visible fortress boundary. */

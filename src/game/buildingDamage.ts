@@ -1,16 +1,24 @@
 import { CARD_DEFS } from './cards';
-import { clearGeneratorParticles, countGeneratorCells } from './generatorShapes';
+import { clearGeneratorParticles } from './generatorShapes';
 import type { GameState, UnitInstance } from './types';
+import { findAttachedBody, integrityRatio, isPhysicallyAlive, isOperational, shouldClearDetachedParts } from './physicalIntegrity';
+import { MaterialType } from './materials';
 
-const OPERATIONAL_INTEGRITY = 0.6;
-
-/** Physical generator cells are authoritative; this only mirrors them into unit HP. */
+/** Physical generator cells are authoritative; hp/maxHp are display compatibility aliases. */
 export function syncGeneratorHp(unit: UnitInstance, gs: GameState): void {
-  const wasOperational = unit.maxHp > 0 && unit.hp / unit.maxHp >= OPERATIONAL_INTEGRITY;
-  unit.hp = countGeneratorCells(gs.sim, unit.uid);
-  const isOperational = unit.hp > 0 && unit.hp / unit.maxHp >= OPERATIONAL_INTEGRITY;
-  if (wasOperational && !isOperational && unit.hp > 0) {
-    const integrity = Math.round((unit.hp / unit.maxHp) * 100);
+  const original = unit.originalParticleCount ?? unit.maxHp;
+  const wasOperational = isOperational(unit.survivingParticleCount ?? unit.hp, original);
+  const body = findAttachedBody(gs.sim, i => gs.sim.grid[i].structureUid === unit.uid && gs.sim.grid[i].type !== 'EMPTY', unit.anchorX, unit.anchorY);
+  if (shouldClearDetachedParts(unit.splitBehavior)) {
+    for (const i of body.detachedIndices) gs.sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
+  }
+  unit.survivingParticleCount = body.attachedIndices.length;
+  unit.originalParticleCount = original;
+  unit.hp = unit.survivingParticleCount;
+  unit.maxHp = original;
+  const nowOperational = isOperational(unit.hp, original);
+  if (wasOperational && !nowOperational && isPhysicallyAlive(unit.hp, original)) {
+    const integrity = Math.round(integrityRatio(unit.hp, original) * 100);
     gs.combatLog.push(`${CARD_DEFS[unit.defId].name} is disabled at ${integrity}% integrity.`);
   }
 }
@@ -23,10 +31,12 @@ export function syncGeneratorHealth(gs: GameState): void {
 export function destroyDeadGenerators(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
     for (const unit of ps.generators) {
-      if (unit.hp > 0) continue;
+      if (isPhysicallyAlive(unit.survivingParticleCount ?? unit.hp, unit.originalParticleCount ?? unit.maxHp)) continue;
       clearGeneratorParticles(gs.sim, unit.uid);
       gs.combatLog.push(`${CARD_DEFS[unit.defId].name} (generator) was destroyed!`);
     }
-    ps.generators = ps.generators.filter(unit => unit.hp > 0);
+    ps.generators = ps.generators.filter(unit =>
+      isPhysicallyAlive(unit.survivingParticleCount ?? unit.hp, unit.originalParticleCount ?? unit.maxHp)
+    );
   }
 }

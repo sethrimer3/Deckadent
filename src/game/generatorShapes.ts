@@ -107,6 +107,12 @@ export function clearGeneratorParticles(sim: SimState, uid: string): void {
 /** Generators use their physical body as HP so gameplay and the sim cannot diverge. */
 export function initializeGeneratorHealth(unit: UnitInstance): void {
   const cells = generatorPixels(unit).length;
+  unit.originalParticleCount = cells;
+  unit.survivingParticleCount = cells;
+  unit.anchorX = unit.simX;
+  unit.anchorY = unit.simY;
+  unit.splitBehavior ??= 'die';
+  unit.canSplit ??= false;
   unit.hp = cells;
   unit.maxHp = cells;
 }
