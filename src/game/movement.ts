@@ -4,8 +4,7 @@ import { CARD_DEFS } from './cards';
 import { countCoreCells } from './state';
 import { MaterialType } from './materials';
 import { damageGeneratorCells } from './generatorShapes';
-import { destroyDeadUnits } from './rules';
-import { syncGeneratorHealth } from './simDamage';
+import { destroyDeadGenerators, syncGeneratorHealth } from './buildingDamage';
 
 // ---------------------------------------------------------------------------
 // Deterministic creature movement system.
@@ -326,9 +325,8 @@ export function updateCreatureMovement(gs: GameState): void {
     ps.creatures = ps.creatures.filter(unit => unit.hp > 0);
   }
 
-  // Collision damage removes physical cells first; the shared cleanup path then
-  // synchronizes card HP and clears any generator whose body is gone.
+  // Collision damage removes physical cells first; shared cleanup clears its body.
   syncGeneratorHealth(gs);
-  destroyDeadUnits(gs);
+  destroyDeadGenerators(gs);
 
 }

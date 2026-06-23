@@ -5,7 +5,7 @@ import { destroyDeadUnits, checkWinLoss } from './rules';
 import { countCoreCells } from './state';
 import { getUnitFootprint, getBaseFootprint, countParticlesInFootprint, CORE_RADIUS } from './footprint';
 import { MaterialType, MaterialTable, fireErosionProb } from './materials';
-import { countGeneratorCells } from './generatorShapes';
+import { syncGeneratorHealth } from './buildingDamage';
 
 // ---------------------------------------------------------------------------
 // Particle-overlap damage resolver — primary damage authority for Phase 4.
@@ -183,15 +183,6 @@ function syncBaseHp(gs: GameState): void {
   for (const ps of [gs.player, gs.enemy]) {
     ps.base.hp = countCoreCells(gs.sim, ps.base);
   }
-}
-
-/** Map surviving generator cells directly to generator HP, deterministically. */
-export function syncGeneratorHp(unit: UnitInstance, gs: GameState): void {
-  unit.hp = countGeneratorCells(gs.sim, unit.uid);
-}
-
-export function syncGeneratorHealth(gs: GameState): void {
-  for (const unit of [...gs.player.generators, ...gs.enemy.generators]) syncGeneratorHp(unit, gs);
 }
 
 // ─── Main entry ──────────────────────────────────────────────────────────────

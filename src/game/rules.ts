@@ -5,7 +5,8 @@ import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
-import { canPlaceGeneratorParticles, clearGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
+import { canPlaceGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
+import { destroyDeadGenerators } from './buildingDamage';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -339,14 +340,10 @@ export function attackTarget(
 }
 
 export function destroyDeadUnits(gs: GameState): void {
+  destroyDeadGenerators(gs);
   for (const ps of [gs.player, gs.enemy]) {
-    for (const u of ps.generators.filter(u => u.hp <= 0)) {
-      gs.combatLog.push(`${CARD_DEFS[u.defId].name} (generator) was destroyed!`);
-      clearGeneratorParticles(gs.sim, u.uid);
-    }
     for (const u of ps.creatures.filter(u => u.hp <= 0))
       gs.combatLog.push(`${CARD_DEFS[u.defId].name} was destroyed!`);
-    ps.generators = ps.generators.filter(u => u.hp > 0);
     ps.creatures  = ps.creatures.filter(u => u.hp > 0);
   }
 }

@@ -218,11 +218,11 @@ function attackerName(gs: GameState, uid: string | null): string {
   return u ? (CARD_DEFS[u.defId]?.name ?? 'Creature') : 'Creature';
 }
 
-function hpBar(hp: number, max: number): string {
+function hpBar(hp: number, max: number, showIntegrity = false): string {
   const pct = Math.max(0, hp / max) * 100;
   const color = pct > 50 ? '#3c9' : pct > 25 ? '#fa3' : '#e44';
   return `<div class="hp-bar-wrap"><div class="hp-bar" style="width:${pct}%;background:${color}"></div></div>
-          <div class="hp-text">${hp}/${max}</div>`;
+          <div class="hp-text">${showIntegrity ? `Integrity ${Math.round(pct)}%` : `${hp}/${max}`}</div>`;
 }
 
 function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = ''): string {
@@ -233,7 +233,7 @@ function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = 
     <div class="unit-name">${def.name}</div>
     <div class="unit-type-badge" style="background:${ELEMENT_COLOR[def.element]}">${def.element}</div>
     ${def.type === 'CREATURE' ? `<div class="unit-atk">ATK ${u.attack}</div>` : ''}
-    ${hpBar(u.hp, u.maxHp)}
+    ${hpBar(u.hp, u.maxHp, def.type === 'GENERATOR')}
   </div>`;
 }
 

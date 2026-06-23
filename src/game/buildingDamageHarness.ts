@@ -1,8 +1,9 @@
 import { checkWinLoss, destroyDeadUnits } from './rules';
 import { damageGeneratorCells, countGeneratorCells } from './generatorShapes';
+import { syncGeneratorHealth } from './buildingDamage';
 import { MaterialType } from './materials';
 import { isGeneratorOperational, createInitialGameState, countCoreCells, resetUidCounter } from './state';
-import { resolveSimDamage, syncGeneratorHealth } from './simDamage';
+import { resolveSimDamage } from './simDamage';
 import type { GameState, ParticleType } from './types';
 
 // Deterministic, framework-free coverage for the physical building-damage contract.
@@ -46,7 +47,7 @@ export function runBuildingDamageHarness(): void {
   const fullCells = countGeneratorCells(gs.sim, generator.uid);
   assert(generator.hp === fullCells && generator.maxHp === fullCells, 'generator HP must start as physical cell count');
 
-  // Fire/spark and collision paths both remove cells; synchronization reflects it in HP.
+  // The creature-collision helper removes a physical cell before synchronization.
   damageGeneratorCells(gs.sim, generator.uid, 1);
   syncGeneratorHealth(gs);
   assert(generator.hp === fullCells - 1, 'physical cell loss must reduce generator HP');
@@ -54,6 +55,7 @@ export function runBuildingDamageHarness(): void {
   damageGeneratorCells(gs.sim, generator.uid, Math.ceil(generator.maxHp * 0.41));
   syncGeneratorHealth(gs);
   assert(!isGeneratorOperational(generator), 'generator must become inert below 60% physical health');
+  assert(gs.combatLog.some(entry => entry.includes('is disabled at')), 'integrity threshold must produce one combat-log message');
 
   damageGeneratorCells(gs.sim, generator.uid, generator.maxHp);
   syncGeneratorHealth(gs);

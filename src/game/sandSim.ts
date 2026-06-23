@@ -161,7 +161,8 @@ function resolveCollision(sim: SimState, source: SimParticle, x: number, y: numb
   if (isHot && target.type === 'WALL') {
     const i = y * sim.width + x;
     const durability = target.lifetime - 1;
-    // { ...target, lifetime: durability } preserves target.material via spread
+    // Spread preserves owner/structureUid while damaged; replacement drops both only
+    // when the cell is physically gone, so generator health sync sees the loss.
     sim.grid[i] = durability <= 0
       ? { type: 'EMPTY', lifetime: 0, material: M.VOID }
       : { ...target, lifetime: durability };
