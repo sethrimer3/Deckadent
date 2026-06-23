@@ -1,4 +1,4 @@
-import type { GameState, PlayerState, CardInstance, UnitInstance, Owner, BaseInstance, SimState } from './types';
+import type { GameState, PlayerState, CardInstance, UnitInstance, Owner, BaseInstance, SimState, GameMode } from './types';
 import { createPRNG, nextFloat } from './prng';
 import type { PRNGState } from './prng';
 import { CARD_DEFS, PLAYER_STARTING_DECK, ENEMY_STARTING_DECK } from './cards';
@@ -161,7 +161,7 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
  * If seed is omitted, Date.now() is used but stored as initialSeed so the
  * run is always reproducible given that seed value.
  */
-export function createInitialGameState(seed?: number): GameState {
+export function createInitialGameState(seed?: number, gameMode: GameMode = 'frozen-hotseat'): GameState {
   // Reset UID counter so replay runs assign identical UIDs.
   resetUidCounter();
   const initialSeed = (seed ?? Date.now()) >>> 0;
@@ -189,6 +189,13 @@ export function createInitialGameState(seed?: number): GameState {
     player,
     enemy,
     turn: 'player',
+    gameMode,
+    matchPhase: 'mode-select',
+    planningOrder: ['player', 'enemy'],
+    planningIndex: 0,
+    planningCycle: 1,
+    simulationTicksRemaining: 0,
+    simFrozen: true,
     phase: 'main',
     selectedCardUid: null,
     selectedAttackerUid: null,

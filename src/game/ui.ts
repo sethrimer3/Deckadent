@@ -1,4 +1,4 @@
-import type { GameState, UnitInstance, CardInstance } from './types';
+import type { GameState, UnitInstance, CardInstance, GameMode } from './types';
 import { CARD_DEFS } from './cards';
 import { canPlayCard } from './rules';
 import { applyCommand } from './commands';
@@ -6,6 +6,8 @@ import { hashHex } from './stateHash';
 import { runEnemyTurn } from './ai';
 import { mountCardArtCanvases } from './cardArt';
 import { structureRadius } from './structureShapes';
+import { getSpellPlacementZone, isSpellPointInCastingZone } from './spellPlacement';
+import { ownerLabel } from './matchFlow';
 
 const ELEMENT_COLOR: Record<string, string> = {
   FIRE: '#e84a1a',
@@ -24,6 +26,7 @@ const ELEMENT_BG: Record<string, string> = {
 let _gs: GameState;
 let _renderFn: () => void;
 let _canvas: HTMLCanvasElement;
+let _startMatch: ((mode: GameMode, address?: string) => void) | null = null;
 
 // ─── Drag state ───────────────────────────────────────────────────────────────
 // Module-level so drawDragOverlay can read it every animation frame.
@@ -52,11 +55,14 @@ function removeDragListeners(): void {
 export function initUI(
   gs: GameState,
   canvas: HTMLCanvasElement,
-  renderFn: () => void
+  renderFn: () => void,
+  startMatch?: (mode: GameMode, address?: string) => void,
+  _getSession?: () => unknown,
 ): void {
   _gs = gs;
   _canvas = canvas;
   _renderFn = renderFn;
+  _startMatch = startMatch ?? null;
 }
 
 // ─── Drag overlay renderer ────────────────────────────────────────────────────
@@ -69,8 +75,29 @@ const _EL_COLOR: Record<string, string> = {
 export function isDragActive(): boolean { return _dragActive; }
 
 export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): void {
-  if (!_dragActive) return;
   const { phase } = gs;
+  if (gs.matchPhase === 'planning') {
+    ctx.save();
+    ctx.fillStyle = 'rgba(92, 122, 145, 0.07)';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.fillStyle = 'rgba(190, 215, 230, 0.72)';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('SIM FROZEN', 8, 15);
+    ctx.restore();
+  }
+  if (phase === 'targeting-spell' && gs.pendingSpellCardUid) {
+    const zone = getSpellPlacementZone('player');
+    ctx.save();
+    ctx.fillStyle = 'rgba(35, 95, 120, 0.18)';
+    ctx.fillRect(0, zone.minY, ctx.canvas.width, zone.maxYExclusive - zone.minY);
+    ctx.fillStyle = 'rgba(105, 25, 30, 0.12)';
+    ctx.fillRect(0, 0, ctx.canvas.width, zone.minY);
+    ctx.strokeStyle = 'rgba(130, 210, 235, 0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+    ctx.beginPath(); ctx.moveTo(0, zone.minY); ctx.lineTo(ctx.canvas.width, zone.minY); ctx.stroke();
+    ctx.fillStyle = 'rgba(180, 225, 235, 0.9)'; ctx.font = '10px serif'; ctx.fillText('CASTING ZONE', 7, zone.minY + 13);
+    ctx.restore();
+  }
+  if (!_dragActive) return;
 
   if (phase === 'targeting-spell' && gs.pendingSpellCardUid) {
     const card = gs.player.hand.find(c => c.uid === gs.pendingSpellCardUid);
@@ -81,11 +108,12 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     const sy    = gs.player.base.simY;
     const tx    = _dragCurrent.x;
     const ty    = _dragCurrent.y;
+    const valid = isSpellPointInCastingZone('player', ty);
 
     ctx.save();
     // Trajectory line
     ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = valid ? color : '#e55';
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
@@ -97,7 +125,7 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
     const angle = Math.atan2(ty - sy, tx - sx);
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.95;
-    ctx.fillStyle   = color;
+    ctx.fillStyle   = valid ? color : '#e55';
     ctx.beginPath();
     ctx.moveTo(tx + Math.cos(angle) * 5, ty + Math.sin(angle) * 5);
     ctx.lineTo(tx + Math.cos(angle + 2.5) * 6, ty + Math.sin(angle + 2.5) * 6);
@@ -107,7 +135,7 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
 
     // Glow ring at target
     ctx.globalAlpha = 0.6;
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = valid ? color : '#e55';
     ctx.lineWidth   = 1;
     ctx.beginPath();
     ctx.arc(tx, ty, 5, 0, Math.PI * 2);
@@ -263,11 +291,22 @@ function handCard(card: CardInstance, gs: GameState): string {
 // ─── Main render ─────────────────────────────────────────────────────────────
 
 export function renderUI(gs: GameState, appEl: HTMLElement): void {
-  const { player, enemy, turn, phase, status } = gs;
+  if (gs.matchPhase === 'mode-select') {
+    appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box"><div class="mode-kicker">DECKADENT</div><h1>Game Mode</h1><p>Choose a local or network session.</p><button data-mode="frozen-hotseat" class="mode-option"><b>Frozen Turn-Based Hotseat</b><span>Playable now · shared device · planning freezes simulation.</span></button><button data-mode="realtime-hotseat" class="mode-option"><b>Real-Time Hotseat</b><span>Playable now · shared device/mobile · simulation runs continuously.</span></button><button data-mode="realtime-lan-host" class="mode-option"><b>Real-Time LAN — Host</b><span>Host-authoritative session scaffold.</span></button><button data-mode="realtime-lan-client" class="mode-option"><b>Real-Time LAN — Join</b><span>Client mirror scaffold · enter host address.</span></button><button class="mode-option disabled" disabled><b>Online Play</b><span>Coming later</span></button></div></div>`;
+    appEl.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => { const mode = (el as HTMLElement).dataset.mode as GameMode; const address = mode === 'realtime-lan-client' ? window.prompt('Host WebSocket address', 'ws://192.168.1.10:8080') ?? undefined : undefined; if (address !== undefined || mode !== 'realtime-lan-client') _startMatch?.(mode, address); }));
+    return;
+  }
+  // In real-time hotseat this is the large mobile-safe active-side switch. The
+  // same renderer is intentionally reused for either local seat.
+  const { turn, phase, status } = gs;
+  const player = turn === 'player' ? gs.player : gs.enemy;
+  const enemy = turn === 'player' ? gs.enemy : gs.player;
+  const activeOwner = turn;
+  const planning = gs.matchPhase === 'planning';
 
   const attackerId = gs.selectedAttackerUid;
-  const isTargetingAttack = phase === 'targeting-attack' && attackerId && turn === 'player';
-  const isTargetingSpell  = phase === 'targeting-spell' && turn === 'player';
+  const isTargetingAttack = planning && phase === 'targeting-attack' && attackerId && turn === 'player';
+  const isTargetingSpell  = planning && phase === 'targeting-spell' && turn === 'player';
 
   function targetClass(uid: string, side: 'enemy' | 'player'): string {
     if ((isTargetingAttack || isTargetingSpell) && side === 'enemy') return 'valid-target';
@@ -284,14 +323,14 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
 
   // Base target button — shown in enemy zone when targeting attack or spell.
   const baseTargetBtn = (isTargetingAttack || isTargetingSpell)
-    ? `<button class="base-target-btn valid-target" data-target-base="enemy"
+    ? `<button class="base-target-btn valid-target" data-target-base="${activeOwner === 'player' ? 'enemy' : 'player'}"
          title="Target enemy base core (HP ${enemy.base.hp}/${enemy.base.maxHp})">
          ⚔ Enemy Base (${enemy.base.hp}/${enemy.base.maxHp} core)
        </button>`
     : `<div class="base-hp-info">Base: ${enemy.base.hp}/${enemy.base.maxHp} core</div>`;
 
   const playerCreatureCards = player.creatures.map(u => {
-    const ready = !u.hasAttacked && turn === 'player' && phase === 'main' && !gs.aiActing;
+    const ready = !u.hasAttacked && phase === 'main' && !gs.aiActing;
     const sel = gs.selectedAttackerUid === u.uid ? ' attacker-selected' : '';
     return unitCard(u, `creature${sel}${ready ? ' ready' : ''}`, ready, `data-attacker="${u.uid}"`);
   }).join('');
@@ -303,7 +342,9 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
   const handCards = player.hand.map(c => handCard(c, gs)).join('');
 
   let phaseMsg = '';
-  if (turn === 'enemy' || gs.aiActing) {
+  if (gs.matchPhase === 'simulation') {
+    phaseMsg = `<div class="phase-msg simulation-msg">Simulation resolving: ${(gs.simulationTicksRemaining / 30).toFixed(1)}s</div>`;
+  } else if (turn === 'enemy' || gs.aiActing) {
     phaseMsg = `<div class="phase-msg enemy-turn">Enemy is acting…</div>`;
   } else if (phase === 'targeting-attack') {
     const aname = attackerName(gs, gs.selectedAttackerUid);
@@ -321,7 +362,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     phaseMsg = `<div class="phase-msg"><b>Drag in the lower half</b> to position <b>${stname || 'Structure'}</b>. The outline shows its footprint — release to place.</div>`;
   }
 
-  const endTurnBtn = turn === 'player' && !gs.aiActing
+  const endTurnBtn = planning && !gs.aiActing
     ? `<button id="end-turn-btn" class="end-turn-btn">End Turn</button>`
     : `<button class="end-turn-btn" disabled>End Turn</button>`;
 
@@ -333,11 +374,11 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
 
   <!-- Instructions -->
   <div class="instructions">
-    <b>Deckadent</b> — Turn: <span class="turn-label ${turn}">${turn.toUpperCase()}</span>
+    <b>Deckadent</b> — <span class="turn-label ${turn}">${gs.matchPhase === 'simulation' ? 'SIMULATION' : `Planning: ${ownerLabel(turn)}`}</span>
     &nbsp;|&nbsp; Energy: <span class="energy">${turn === 'player' ? player.energy : enemy.energy}</span>
     &nbsp;|&nbsp; Deck: ${player.deck.length} · Discard: ${player.discard.length}
     &nbsp;|&nbsp; <span class="debug-hash" title="Deterministic state hash (tick ${gs.tick})">⬡ ${stateHash}</span>
-    <span class="hint">Play generators → get energy. Creatures attack once per turn. Spells need a target.</span>
+    <span class="hint">${planning ? `SIM FROZEN · Next planning order: ${ownerLabel(gs.planningOrder[0])} → ${ownerLabel(gs.planningOrder[1])}` : 'Card placement locked while the simulation resolves.'}</span>
   </div>
 
   <div class="play-area">
@@ -370,6 +411,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
 
   <!-- Hand + controls -->
   <div class="hand-area">
+    ${gs.gameMode === 'realtime-hotseat' ? `<button id="seat-toggle-btn" class="seat-toggle">Active controls: ${ownerLabel(activeOwner)} — Switch Player</button>` : ''}
     <div class="hand-cards">${handCards}</div>
     <div class="controls">
       ${endTurnBtn}
@@ -394,7 +436,7 @@ ${status !== 'playing' ? `
 
   const slot = appEl.querySelector('#canvas-slot');
   if (slot) slot.appendChild(_canvas);
-  _canvas.classList.toggle('placement-active', gs.phase === 'placing-generator' || gs.phase === 'placing-creature' || gs.phase === 'placing-structure');
+  _canvas.classList.toggle('placement-active', planning && (gs.phase === 'placing-generator' || gs.phase === 'placing-creature' || gs.phase === 'placing-structure' || gs.phase === 'targeting-spell'));
 
   bindEvents(gs, appEl);
   mountCardArtCanvases(appEl);
@@ -403,14 +445,20 @@ ${status !== 'playing' ? `
 // ─── Event binding ────────────────────────────────────────────────────────────
 
 function bindEvents(gs: GameState, appEl: HTMLElement): void {
+  const actionLocked = () => gs.gameMode === 'frozen-hotseat' && gs.matchPhase !== 'planning';
+  appEl.querySelector('#seat-toggle-btn')?.addEventListener('click', () => {
+    gs.turn = gs.turn === 'player' ? 'enemy' : 'player';
+    gs.combatLog.push(`Active hotseat controls: ${ownerLabel(gs.turn)}.`);
+    _renderFn();
+  });
   appEl.querySelector('#end-turn-btn')?.addEventListener('click', () => {
-    if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+    if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
     gs.selectedCardUid = null;
     gs.selectedAttackerUid = null;
     gs.pendingSpellCardUid = null;
     gs.pendingGeneratorCardUid = null;
     gs.phase = 'main';
-    applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: 'player' });
+    applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: gs.turn, source: 'local' });
     _renderFn();
     const nextTurn: string = gs.turn;
     if (nextTurn === 'enemy') {
@@ -427,9 +475,9 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   appEl.querySelectorAll('[data-card-uid]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+      if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
       const uid = (el as HTMLElement).dataset.cardUid!;
-      const card = gs.player.hand.find(c => c.uid === uid);
+      const card = (gs.turn === 'player' ? gs.player : gs.enemy).hand.find(c => c.uid === uid);
       if (!card) return;
       const def = CARD_DEFS[card.defId];
 
@@ -482,9 +530,9 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   appEl.querySelectorAll('[data-attacker]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+      if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
       const uid = (el as HTMLElement).dataset.attacker!;
-      const creature = gs.player.creatures.find(c => c.uid === uid);
+      const creature = (gs.turn === 'player' ? gs.player : gs.enemy).creatures.find(c => c.uid === uid);
       if (!creature || creature.hasAttacked) return;
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid === uid) {
@@ -507,7 +555,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   _canvas.onmousedown = e => {
     e.preventDefault();
     e.stopPropagation();
-    if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+    if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
 
     const isPlacingGen       = gs.phase === 'placing-generator' && !!gs.pendingGeneratorCardUid;
     const isPlacingCreature  = gs.phase === 'placing-creature'  && !!gs.pendingCreatureCardUid;
@@ -540,7 +588,7 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
                     : gs.pendingStructureCardUid!;
 
       const ok = applyCommand(gs, {
-        kind: 'playCard', tick: gs.tick, owner: 'player',
+        kind: 'playCard', tick: gs.tick, owner: gs.turn, source: 'local',
         cardUid, placement: { x, y },
       });
 
@@ -562,19 +610,19 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   appEl.querySelectorAll('[data-target]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+      if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
       const targetUid = (el as HTMLElement).dataset.target!;
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid) {
         const ok = applyCommand(gs, {
-          kind: 'attackTarget', tick: gs.tick, owner: 'player',
+          kind: 'attackTarget', tick: gs.tick, owner: gs.turn, source: 'local',
           attackerUid: gs.selectedAttackerUid, targetUid,
         });
         if (ok) { gs.selectedAttackerUid = null; gs.phase = 'main'; }
         _renderFn();
       } else if (gs.phase === 'targeting-spell' && gs.pendingSpellCardUid) {
         const ok = applyCommand(gs, {
-          kind: 'playCard', tick: gs.tick, owner: 'player',
+          kind: 'playCard', tick: gs.tick, owner: gs.turn, source: 'local',
           cardUid: gs.pendingSpellCardUid, targetUid,
         });
         if (ok) {
@@ -590,19 +638,19 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
   appEl.querySelectorAll('[data-target-base]').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
-      if (gs.turn !== 'player' || gs.aiActing || gs.status !== 'playing') return;
+      if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
       const targetBase = (el as HTMLElement).dataset.targetBase as 'player' | 'enemy';
 
       if (gs.phase === 'targeting-attack' && gs.selectedAttackerUid) {
         const ok = applyCommand(gs, {
-          kind: 'attackTarget', tick: gs.tick, owner: 'player',
+          kind: 'attackTarget', tick: gs.tick, owner: gs.turn, source: 'local',
           attackerUid: gs.selectedAttackerUid, targetBase,
         });
         if (ok) { gs.selectedAttackerUid = null; gs.phase = 'main'; }
         _renderFn();
       } else if (gs.phase === 'targeting-spell' && gs.pendingSpellCardUid) {
         const ok = applyCommand(gs, {
-          kind: 'playCard', tick: gs.tick, owner: 'player',
+          kind: 'playCard', tick: gs.tick, owner: gs.turn, source: 'local',
           cardUid: gs.pendingSpellCardUid, targetBase,
         });
         if (ok) {

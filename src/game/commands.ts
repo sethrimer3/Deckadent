@@ -2,6 +2,10 @@ import type { GameState, Owner } from './types';
 import { playCard, attackTarget, endTurn } from './rules';
 import { SIM_W, SIM_H } from './sandSim';
 import { CARD_DEFS } from './cards';
+import { isSpellPointInCastingZone } from './spellPlacement';
+import { canIssueTurnCommand } from './matchFlow';
+export type CommandSource = 'local' | 'remote' | 'ai';
+type CommandMeta = { sequence?: number; source?: CommandSource };
 
 // ---------------------------------------------------------------------------
 // Command types — plain serializable objects, no class instances or functions.
@@ -9,7 +13,7 @@ import { CARD_DEFS } from './cards';
 // ---------------------------------------------------------------------------
 
 export type Command =
-  | {
+  | ({
       kind: 'playCard';
       tick: number;
       owner: Owner;
@@ -17,26 +21,26 @@ export type Command =
       targetUid?: string;
       targetBase?: Owner;   // spell targeting a base (mutually exclusive with targetUid)
       placement?: { x: number; y: number };
-    }
-  | {
+    } & CommandMeta)
+  | ({
       kind: 'attackTarget';
       tick: number;
       owner: Owner;
       attackerUid: string;
       targetUid?: string;   // unit target (mutually exclusive with targetBase)
       targetBase?: Owner;   // base target (mutually exclusive with targetUid)
-    }
-  | {
+    } & CommandMeta)
+  | ({
       kind: 'endTurn';
       tick: number;
       owner: Owner;
-    }
-  | {
+    } & CommandMeta)
+  | ({
       kind: 'selectTarget';
       tick: number;
       owner: Owner;
       targetUid: string;
-    };
+    } & CommandMeta);
 
 // ---------------------------------------------------------------------------
 // Command log — the authoritative replay record.
@@ -60,8 +64,10 @@ const TURN_SENSITIVE: Command['kind'][] = ['playCard', 'attackTarget', 'endTurn'
 function opponent(o: Owner): Owner { return o === 'player' ? 'enemy' : 'player'; }
 
 function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | null {
+  if (cmd.sequence !== undefined && (!Number.isInteger(cmd.sequence) || cmd.sequence < 1)) return 'invalid command sequence';
   if (gs.status !== 'playing') return 'game is over';
-  if (TURN_SENSITIVE.includes(cmd.kind) && cmd.owner !== gs.turn) {
+  if (TURN_SENSITIVE.includes(cmd.kind) && !canIssueTurnCommand(gs)) return 'card actions are locked while simulation resolves';
+  if (gs.gameMode === 'frozen-hotseat' && TURN_SENSITIVE.includes(cmd.kind) && cmd.owner !== gs.turn) {
     return `not ${cmd.owner}'s turn (active: ${gs.turn})`;
   }
   // Tick validation: commands must be issued for the current tick.
@@ -81,6 +87,11 @@ function validate(gs: GameState, cmd: Command, skipTickCheck = false): string | 
     const card = ps.hand.find(c => c.uid === cmd.cardUid);
     if (card) {
       const def = CARD_DEFS[card.defId];
+      if (def.type === 'SPELL' && !isSpellPointInCastingZone(cmd.owner, y)) {
+        return cmd.owner === 'player'
+          ? 'Spells can only be placed in your casting zone'
+          : 'enemy spell must be placed in its casting zone';
+      }
       const halfY = SIM_H / 2;
       if (def.type === 'CREATURE') {
         if (cmd.owner === 'player' && y < halfY) return `player creature must be placed in lower half (y >= ${halfY})`;

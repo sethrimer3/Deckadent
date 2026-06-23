@@ -8,6 +8,8 @@ import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
 import { canPlaceGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 import { destroyDeadGenerators } from './buildingDamage';
+import { isSpellPointInCastingZone } from './spellPlacement';
+import { canIssueTurnCommand, advancePlanningTurn } from './matchFlow';
 
 export function getActive(gs: GameState) {
   return gs.turn === 'player' ? gs.player : gs.enemy;
@@ -25,7 +27,7 @@ export function findUnit(gs: GameState, uid: string): UnitInstance | null {
 }
 
 export function canPlayCard(gs: GameState, cardUid: string): boolean {
-  if (gs.turn !== 'player' || gs.aiActing) return false;
+  if (gs.turn !== 'player' || gs.aiActing || !canIssueTurnCommand(gs)) return false;
   const allowedPhase = gs.phase === 'main'
     || gs.phase === 'placing-generator'
     || gs.phase === 'placing-creature'
@@ -117,6 +119,7 @@ export function playCard(
   placement?: { x: number; y: number },
   targetBase?: Owner,
 ): boolean {
+  if (!canIssueTurnCommand(gs)) return false;
   const owner: Owner = gs.turn;
   const ps = owner === 'player' ? gs.player : gs.enemy;
   const opp = owner === 'player' ? gs.enemy : gs.player;
@@ -231,6 +234,11 @@ export function playCard(
       targetPos = { x: base.simX, y: base.simY };
       targetName = `${targetBase} base`;
     } else {
+      if (placement!.x < 0 || placement!.x >= SIM_W || placement!.y < 0 || placement!.y >= SIM_H) return false;
+      if (!isSpellPointInCastingZone(owner, placement!.y)) {
+        if (owner === 'player') gs.combatLog.push('Spells can only be placed in your casting zone.');
+        return false;
+      }
       targetPos = placement!;
       targetName = `battlefield (${targetPos.x},${targetPos.y})`;
     }
@@ -355,23 +363,19 @@ export function checkWinLoss(gs: GameState): void {
   const enemyCores  = countCoreCells(gs.sim, gs.enemy.base);
   if (!isPhysicallyAlive(playerCores, gs.player.base.originalParticleCount ?? gs.player.base.maxHp)) {
     gs.status = 'lose';
+    gs.matchPhase = 'game-over';
+    gs.simFrozen = true;
     gs.combatLog.push('Your base core was destroyed. You lose!');
     return;
   }
   if (!isPhysicallyAlive(enemyCores, gs.enemy.base.originalParticleCount ?? gs.enemy.base.maxHp)) {
     gs.status = 'win';
+    gs.matchPhase = 'game-over';
+    gs.simFrozen = true;
     gs.combatLog.push('Enemy base core was destroyed. You win!');
   }
 }
 
 export function endTurn(gs: GameState): void {
-  gs.selectedCardUid = null;
-  gs.selectedAttackerUid = null;
-  gs.pendingSpellCardUid = null;
-  gs.pendingGeneratorCardUid = null;
-  gs.pendingCreatureCardUid = null;
-  gs.pendingStructureCardUid = null;
-  gs.phase = 'main';
-  gs.turn = gs.turn === 'player' ? 'enemy' : 'player';
-  startTurn(gs);
+  advancePlanningTurn(gs);
 }

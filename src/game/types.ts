@@ -10,6 +10,13 @@ export type ElementType = 'FIRE' | 'WATER' | 'EARTH' | 'NEUTRAL';
 export type Owner = 'player' | 'enemy';
 export type GameStatus = 'playing' | 'win' | 'lose';
 export type TurnPhase = 'main' | 'targeting-spell' | 'targeting-attack' | 'placing-generator' | 'placing-creature' | 'placing-structure';
+/** Match selections are deliberately transport-aware, so a server adapter does not
+ * need to infer rules from UI state later. */
+export type GameMode = 'frozen-hotseat' | 'realtime-hotseat' | 'realtime-lan-host' | 'realtime-lan-client' | 'online-placeholder';
+export type TransportKind = 'local' | 'lan' | 'online';
+export type MatchRole = 'host' | 'client' | 'local-both';
+export type ConnectionState = 'not-connected' | 'hosting' | 'joining' | 'connected' | 'disconnected' | 'error';
+export type MatchPhase = 'mode-select' | 'planning' | 'simulation' | 'game-over';
 export type EffectKind = 'beam' | 'spray' | 'burst' | 'freeze';
 /** Default is die: detached physical fragments do not remain part of the entity. */
 export type SplitBehavior = 'die' | 'debris' | 'independent';
@@ -153,6 +160,14 @@ export interface GameState {
   player: PlayerState;
   enemy: PlayerState;
   turn: Owner;
+  /** Match-flow authority. `phase` remains the card interaction/UI phase. */
+  gameMode: GameMode;
+  matchPhase: MatchPhase;
+  planningOrder: Owner[];
+  planningIndex: number;
+  planningCycle: number;
+  simulationTicksRemaining: number;
+  simFrozen: boolean;
   phase: TurnPhase;
   selectedCardUid: string | null;
   selectedAttackerUid: string | null;

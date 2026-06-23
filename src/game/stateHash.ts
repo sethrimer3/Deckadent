@@ -104,6 +104,13 @@ export function hashGameState(gs: GameState): number {
   h = hashString(h, gs.turn);
   h = hashString(h, gs.status);
   h = hashString(h, gs.phase);
+  h = hashString(h, gs.gameMode);
+  h = hashString(h, gs.matchPhase);
+  h = djb2Update(h, gs.planningIndex);
+  h = djb2Update(h, gs.planningCycle);
+  h = djb2Update(h, gs.simulationTicksRemaining);
+  h = djb2Update(h, gs.simFrozen ? 1 : 0);
+  for (const owner of gs.planningOrder) h = hashString(h, owner);
   h = hashPlayerState(h, gs.player);
   h = hashPlayerState(h, gs.enemy);
   h = hashSimState(h, gs.sim);

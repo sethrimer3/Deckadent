@@ -7,6 +7,7 @@ import { updateCreatureMovement } from './movement';
 import { updateSim } from './sandSim';
 import { resolveSimDamage } from './simDamage';
 import { hashHex } from './stateHash';
+import { beginFrozenMatch, advanceSimulationWindow } from './matchFlow';
 
 // ---------------------------------------------------------------------------
 // Replay record format — written to localStorage on game end.
@@ -14,7 +15,7 @@ import { hashHex } from './stateHash';
 // v2 adds finalTick so verifyReplay can advance to the exact saved tick before
 // comparing hashes. Records missing finalTick (v1) are rejected with a warning.
 // ---------------------------------------------------------------------------
-const REPLAY_VERSION = 'deckadent-replay-v4';
+const REPLAY_VERSION = 'deckadent-replay-v5';
 const STORAGE_KEY    = 'deckadent-latest-replay';
 
 export interface ReplayRecord {
@@ -75,7 +76,7 @@ export function loadLatestReplay(): ReplayRecord | null {
     if (rec.version !== REPLAY_VERSION) {
       console.warn(
         `[Replay] Version mismatch: got "${rec.version}", expected "${REPLAY_VERSION}". ` +
-        `Play a new game to generate a v4 replay record.`
+        `Play a new game to generate a v5 replay record.`
       );
       return null;
     }
@@ -123,18 +124,21 @@ export interface VerifyResult {
 
 /** Advance gs by exactly one tick using the canonical per-tick order. */
 function advanceTick(gs: GameState): void {
+  if (gs.matchPhase !== 'simulation' || gs.status !== 'playing') return;
   gs.tick++;
   updateCombatEffects(gs);
   updateCreatureMovement(gs);
   updateSim(gs.sim);
   resolveSimDamage(gs);
+  advanceSimulationWindow(gs);
 }
 
 export function verifyReplay(record: ReplayRecord): VerifyResult {
   // Fresh state — UID counter reset inside createInitialGameState.
   resetUidCounter();
   clearCommandLog();
-  const gs = createInitialGameState(record.initialSeed);
+  const gs = createInitialGameState(record.initialSeed, 'frozen-hotseat');
+  beginFrozenMatch(gs);
 
   let commandsApplied = 0;
   let commandsRejected = 0;

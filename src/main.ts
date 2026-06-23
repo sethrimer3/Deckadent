@@ -1,6 +1,7 @@
 import './styles.css';
 import { updateSim, renderSim, SIM_W, SIM_H } from './game/sandSim';
 import { createInitialGameState } from './game/state';
+import { beginFrozenMatch, advanceSimulationWindow } from './game/matchFlow';
 import { initUI, renderUI, drawDragOverlay, isDragActive } from './game/ui';
 import { renderCreatureEntities, drawBattlefieldLabels } from './game/battlefieldEntities';
 import { renderShaderFx } from './game/shaderFx';
@@ -10,6 +11,9 @@ import { updateCreatureMovement } from './game/movement';
 import { saveReplay, loadLatestReplay, verifyReplay } from './game/replay';
 import { getCommandLog, getRejectedLog } from './game/commands';
 import { hashHex } from './game/stateHash';
+import { runEnemyTurn } from './game/ai';
+import { createSession } from './game/session';
+import type { GameMode } from './game/types';
 
 // ─── Canvas setup ─────────────────────────────────────────────────────────────
 const canvas = document.createElement('canvas');
@@ -47,7 +51,18 @@ function render(): void {
   renderUI(gs, appEl);
 }
 
-initUI(gs, canvas, render);
+let session = createSession('frozen-hotseat');
+function startMatch(mode: GameMode, address?: string): void {
+  Object.assign(gs, createInitialGameState(undefined, mode));
+  session = createSession(mode);
+  session.roomAddress = address;
+  if (mode === 'frozen-hotseat') beginFrozenMatch(gs);
+  else { gs.matchPhase = 'simulation'; gs.simFrozen = false; gs.combatLog.push(`${mode} initialized.`); }
+  _replaySaved = false;
+  render();
+}
+
+initUI(gs, canvas, render, startMatch, () => session);
 render();
 
 // ─── Fixed-step game loop ─────────────────────────────────────────────────────
@@ -77,14 +92,22 @@ function loop(ts: number): void {
   let tickCount = 0;
 
   while (accumulator >= FIXED_DT && tickCount < MAX_TICKS_PER_FRAME) {
+    accumulator -= FIXED_DT;
+    tickCount++;
+    if ((gs.matchPhase !== 'simulation' && gs.gameMode === 'frozen-hotseat') || gs.status !== 'playing') continue;
     gs.tick++;
     updateCombatEffects(gs);
     updateCreatureMovement(gs);
     updateSim(gs.sim);
     resolveSimDamage(gs);
-    accumulator -= FIXED_DT;
-    tickCount++;
+    const planningStarted = advanceSimulationWindow(gs);
     ticked = true;
+    if (planningStarted) {
+      render();
+      if (gs.turn === 'enemy') {
+        runEnemyTurn(gs, render, () => { if (gs.status === 'playing') render(); });
+      }
+    }
   }
 
   // Save replay once when the game ends.
@@ -96,13 +119,11 @@ function loop(ts: number): void {
   // Re-render the canvas whenever the sim ticked OR a drag is active.
   // A drag is active at up to 60fps (mouse movement), which exceeds the 30fps sim rate,
   // so we must re-clear and re-draw every frame while dragging to avoid overlay smearing.
-  if (ticked || isDragActive()) {
-    renderSim(ctx, gs.sim);
-    renderShaderFx(ctx, gs);
-    renderCreatureEntities(ctx, gs);
-    drawBattlefieldLabels(ctx, gs);
-    if (ticked) updateDebugPanel();
-  }
+  renderSim(ctx, gs.sim);
+  renderShaderFx(ctx, gs);
+  renderCreatureEntities(ctx, gs);
+  drawBattlefieldLabels(ctx, gs);
+  if (ticked) updateDebugPanel();
 
   // Drag overlay always drawn after the base canvas layers.
   drawDragOverlay(ctx, gs);
