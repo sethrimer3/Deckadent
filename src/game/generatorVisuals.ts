@@ -2,21 +2,22 @@ import { CARD_DEFS } from './cards';
 import { SIM_H, SIM_W } from './sandSim';
 import type { GameState, UnitInstance, BaseInstance, Owner } from './types';
 import { isGeneratorOperational } from './state';
+import { PALETTE } from './visualTheme';
 
 // ─── Shared colours ───────────────────────────────────────────────────────────
 
-const GOLD       = '#ffd740';
-const ROCK       = '#786c6a';
-const ROCK_DARK  = '#4f484b';
-const GRASS      = '#3ba65f';
-const LEAF       = '#2f8c4c';
+const GOLD       = PALETTE.mutedGold;
+const ROCK       = PALETTE.stone;
+const ROCK_DARK  = PALETTE.stoneDark;
+const GRASS      = PALETTE.moss;
+const LEAF       = '#465034';
 const DIRT       = '#8a5a32';
-const GLASS      = '#98e6ff';
-const GLASS_DARK = '#376477';
-const LIGHT      = '#d8ffff';
+const GLASS      = '#89999a';
+const GLASS_DARK = '#46575a';
+const LIGHT      = PALETTE.oldParchment;
 const BUILDING   = '#d5c69a';
-const FIRE_CORE  = '#ff8b2f';
-const WATER_CORE = '#5ec8ff';
+const FIRE_CORE  = PALETTE.emberBright;
+const WATER_CORE = PALETTE.waterSlate;
 
 // Base/fortress colours
 const FORT_WALL  = '#8c7865';
@@ -119,6 +120,7 @@ function drawGenerator(
   unit: UnitInstance,
   fallbackX: number,
   fallbackY: number,
+  tick: number,
 ): void {
   const cx = Math.round(unit.simX ?? fallbackX);
   const cy = Math.round(unit.simY ?? fallbackY);
@@ -127,14 +129,16 @@ function drawGenerator(
     const x = cx + p.dx;
     const y = cy + (unit.owner === 'enemy' ? -p.dy : p.dy);
     if (x < 0 || x >= SIM_W || y < 0 || y >= SIM_H) continue;
-    ctx.fillStyle = p.color;
-    ctx.fillRect(x, y, 1, 1);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(x, y, 1, 1);
   }
+  if (isGeneratorOperational(unit) && ((tick + cx + cy) % 9 === 0)) { ctx.fillStyle = PALETTE.brightGold; ctx.fillRect(cx + ((tick >> 1) % 5) - 2, cy - 9, 1, 1); }
+  if (!isGeneratorOperational(unit)) { ctx.fillStyle = PALETTE.ember; ctx.fillRect(cx, cy + 2, 1, 1); }
 }
 
 export function renderGeneratorStructures(ctx: CanvasRenderingContext2D, gs: GameState): void {
-  gs.enemy.generators.forEach((unit, index) => drawGenerator(ctx, unit, 222 + index * 34, 32));
-  gs.player.generators.forEach((unit, index) => drawGenerator(ctx, unit, 62 + index * 34, 288));
+  gs.enemy.generators.forEach((unit, index) => drawGenerator(ctx, unit, 222 + index * 34, 32, gs.tick));
+  gs.player.generators.forEach((unit, index) => drawGenerator(ctx, unit, 62 + index * 34, 288, gs.tick));
 }
 
 // ─── Base / core fortress renderer ───────────────────────────────────────────

@@ -16,8 +16,8 @@ function shouldSample(x: number, y: number, tick: number, stride: number): boole
 }
 
 function materialGlowColor(type: ParticleType): string | null {
-  if (type === 'FIRE') return 'rgba(228, 111, 38, 0.16)';
-  if (type === 'SPARK') return 'rgba(240, 189, 79, 0.22)';
+  if (type === 'FIRE') return 'rgba(214, 90, 31, 0.16)';
+  if (type === 'SPARK') return 'rgba(241, 200, 90, 0.20)';
   return null;
 }
 
@@ -49,11 +49,11 @@ export function renderShaderFx(ctx: CanvasRenderingContext2D, gs: GameState): vo
     }
 
     if (particle.type === 'CORE') {
-      ctx.fillStyle = `rgba(30, 255, 218, ${pulse(tick + x + y, 0.12, 0.035, 0.09)})`;
+      ctx.fillStyle = `rgba(201, 154, 58, ${pulse(tick + x + y, 0.12, 0.035, 0.09)})`;
       ctx.fillRect(x - 1, y - 1, 3, 3);
       draws++;
     } else if (particle.type === 'WATER' && (x + y + tick) % 5 === 0) {
-      ctx.fillStyle = 'rgba(145, 235, 255, 0.12)';
+      ctx.fillStyle = 'rgba(150, 174, 178, 0.12)';
       ctx.fillRect(x, y, 2, 1);
       draws++;
     } else if (particle.type === 'ICE' && (x * 3 + y + tick) % 7 === 0) {
@@ -71,10 +71,7 @@ export function renderShaderFx(ctx: CanvasRenderingContext2D, gs: GameState): vo
 
   // The vignette is intentionally normal compositing so it adds depth without bleaching cells.
   ctx.save();
-  const gradient = ctx.createRadialGradient(width * 0.5, height * 0.48, width * 0.26, width * 0.5, height * 0.5, width * 0.75);
-  gradient.addColorStop(0, 'rgba(16, 12, 9, 0)');
-  gradient.addColorStop(1, `rgba(9, 6, 5, ${VIGNETTE_ALPHA})`);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = `rgba(7, 6, 4, ${VIGNETTE_ALPHA})`;
+  for (let i = 0; i < 10; i++) ctx.fillRect(i, i, width - i * 2, 1);
   ctx.restore();
 }

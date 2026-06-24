@@ -1,6 +1,7 @@
 import { CARD_DEFS } from './cards';
 import { SIM_W, SIM_H } from './sandSim';
 import type { GameState, UnitInstance } from './types';
+import { PALETTE } from './visualTheme';
 
 // ---------------------------------------------------------------------------
 // Battlefield creature renderer.
@@ -21,12 +22,12 @@ function px(pixels: Pixel[], dx: number, dy: number, color: string): void {
 function emberlingPixels(): Pixel[] {
   const p: Pixel[] = [];
   // Body
-  px(p, 0, 0, '#ff6622'); px(p, -1, 0, '#ff4400'); px(p, 1, 0, '#ff4400');
+  px(p, 0, 0, PALETTE.emberBright); px(p, -1, 0, PALETTE.ember); px(p, 1, 0, PALETTE.ember);
   px(p, 0, 1, '#dd3300'); px(p, -1, 1, '#cc2200'); px(p, 1, 1, '#cc2200');
   px(p, 0, -1, '#ff9944'); px(p, -1, -1, '#ff8800');  px(p, 1, -1, '#ff8800');
   // Flame tips
   px(p, 0, -2, '#ffcc44'); px(p, -1, -2, '#ffaa22'); px(p, 1, -2, '#ffaa22');
-  px(p, 0, -3, '#ffee88');
+  px(p, 0, -3, PALETTE.brightGold);
   // Eyes
   px(p, -1, 0, '#222200'); px(p, 1, 0, '#222200');
   return p;
@@ -37,13 +38,13 @@ function emberlingPixels(): Pixel[] {
 function waterWispPixels(): Pixel[] {
   const p: Pixel[] = [];
   // Outer orb
-  px(p, 0, -2, '#88ddff'); px(p, -1, -2, '#66bbee'); px(p, 1, -2, '#66bbee');
+  px(p, 0, -2, '#91a9ae'); px(p, -1, -2, '#718e95'); px(p, 1, -2, '#718e95');
   px(p, -2, -1, '#55aadd'); px(p, 2, -1, '#55aadd');
   px(p, -2, 0, '#4499cc');  px(p, 2, 0, '#4499cc');
   px(p, -2, 1, '#55aadd');  px(p, 2, 1, '#55aadd');
   px(p, 0, 2, '#88ddff');   px(p, -1, 2, '#66bbee'); px(p, 1, 2, '#66bbee');
   // Inner glow
-  px(p, 0, 0, '#ccf4ff'); px(p, -1, 0, '#aaddff'); px(p, 1, 0, '#aaddff');
+  px(p, 0, 0, '#b7c3bb'); px(p, -1, 0, '#91a9ae'); px(p, 1, 0, '#91a9ae');
   px(p, 0, -1, '#bbeeFF'); px(p, 0, 1, '#99ccee');
   // Shimmer
   px(p, -1, -1, '#ffffff'); px(p, 1, -1, '#ddeeff');
@@ -101,7 +102,7 @@ function drawHpBar(
 
   const filled = Math.max(0, Math.round((hp / maxHp) * barW));
   const pct = hp / maxHp;
-  const color = pct > 0.5 ? '#3c9' : pct > 0.25 ? '#fa3' : '#e44';
+  const color = pct > 0.5 ? PALETTE.mutedGold : pct > 0.25 ? PALETTE.emberBright : PALETTE.bloodRed;
 
   ctx.fillStyle = '#111';
   ctx.fillRect(x0, y0, barW, barH);
@@ -117,6 +118,8 @@ function drawCreature(ctx: CanvasRenderingContext2D, unit: UnitInstance): void {
   const cy = Math.round(unit.simY);
 
   const pixels = pixelsForCreature(unit);
+  ctx.fillStyle = unit.owner === 'player' ? PALETTE.bronze : PALETTE.bloodRed;
+  ctx.fillRect(cx - 3, cy + (unit.owner === 'player' ? 4 : -4), 7, 1);
   for (const p of pixels) {
     const x = cx + p.dx;
     const y = cy + p.dy;
@@ -152,14 +155,14 @@ export function drawBattlefieldLabels(ctx: CanvasRenderingContext2D, gs: GameSta
 
   // Player base label below the fortress HP bar
   const pb = gs.player.base;
-  ctx.fillStyle = '#4df';
-  ctx.fillText('PLAYER CORE', pb.simX, pb.simY + 14);
+  ctx.fillStyle = PALETTE.mutedGold;
+  ctx.fillText('YOUR KEEP', pb.simX, pb.simY + 14);
 
   // Enemy base label above the fortress HP bar
   const eb = gs.enemy.base;
-  ctx.fillStyle = '#f76';
+  ctx.fillStyle = PALETTE.bloodRed;
   ctx.textBaseline = 'bottom';
-  ctx.fillText('ENEMY CORE', eb.simX, eb.simY - 14);
+  ctx.fillText('ENEMY KEEP', eb.simX, eb.simY - 14);
 
   // White selection ring around the selected attacker
   if (gs.selectedAttackerUid) {
@@ -167,9 +170,8 @@ export function drawBattlefieldLabels(ctx: CanvasRenderingContext2D, gs: GameSta
     if (attacker && attacker.simX !== undefined && attacker.simY !== undefined) {
       const cx = Math.round(attacker.simX);
       const cy = Math.round(attacker.simY);
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cx - 6, cy - 6, 12, 12);
+      ctx.fillStyle = PALETTE.brightGold;
+      for (const [x, y, w, h] of [[cx - 6, cy - 6, 4, 1], [cx - 6, cy - 6, 1, 4], [cx + 3, cy - 6, 4, 1], [cx + 6, cy - 6, 1, 4], [cx - 6, cy + 6, 4, 1], [cx - 6, cy + 3, 1, 4], [cx + 3, cy + 6, 4, 1], [cx + 6, cy + 3, 1, 4]]) ctx.fillRect(x, y, w, h);
     }
   }
 

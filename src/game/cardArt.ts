@@ -82,6 +82,8 @@ function getDrawFn(cardId: string): DrawFn {
     case 'ignite':      return drawIgnite;
     case 'splash':      return drawSplash;
     case 'collapse':    return drawCollapse;
+    case 'frost_shard': return drawFrostShard;
+    case 'vine_tangle': return drawVineTangle;
     default:            return drawFallback;
   }
 }
@@ -104,6 +106,36 @@ function fillRoundRect(
   ctx.arc(x + r, y + r, r, Math.PI, -Math.PI / 2);
   ctx.closePath();
   ctx.fill();
+}
+
+type Pixel = { x: number; y: number; color: string };
+function drawPixelSprite(ctx: CanvasRenderingContext2D, pixels: Pixel[], ox: number, oy: number, scale = 1): void {
+  for (const p of pixels) { ctx.fillStyle = p.color; ctx.fillRect(ox + p.x * scale, oy + p.y * scale, scale, scale); }
+}
+function drawDitherRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, a: string, b: string): void {
+  ctx.fillStyle = a; ctx.fillRect(x, y, w, h); ctx.fillStyle = b;
+  for (let py = y; py < y + h; py += 2) for (let px = x + ((py - y) & 2); px < x + w; px += 4) ctx.fillRect(px, py, 1, 1);
+}
+function drawPixelGlow(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+  ctx.fillStyle = color; ctx.globalAlpha = .18; ctx.fillRect(x - 8, y - 1, 17, 3); ctx.fillRect(x - 1, y - 8, 3, 17); ctx.globalAlpha = 1;
+}
+
+function drawFrostShard(ctx: CanvasRenderingContext2D, t: number): void {
+  drawDitherRect(ctx, 0, 0, ART_W, ART_H, '#100f0d', '#1c211f');
+  drawPixelGlow(ctx, 48, 35, '#a8b8bd');
+  const ice = '#a8b8bd', light = '#d7e0db', dark = '#354047';
+  const pixels: Pixel[] = [];
+  for (let y = 0; y < 18; y++) for (let x = -y / 3; x <= y / 3; x++) pixels.push({ x: Math.round(x), y, color: x < 0 ? dark : ice });
+  pixels.push({ x: 0, y: 4, color: light }, { x: 1, y: 8, color: '#070604' }, { x: 0, y: 13, color: '#070604' });
+  drawPixelSprite(ctx, pixels, 48, 17, 2);
+  if ((t * 3 | 0) % 3 === 0) { ctx.fillStyle = '#f1c85a'; ctx.fillRect(62, 22, 2, 2); }
+}
+function drawVineTangle(ctx: CanvasRenderingContext2D, t: number): void {
+  drawDitherRect(ctx, 0, 0, ART_W, ART_H, '#110d09', '#21170f');
+  const p: Pixel[] = [];
+  for (let i = 0; i < 24; i++) { const x = (i * 7) % 25 - 12; const y = (i * 11) % 17 - 8; p.push({ x, y, color: i % 4 ? '#49341f' : '#596343' }); if (i % 3 === 0) p.push({ x: x + 1, y: y - 1, color: '#17110c' }); }
+  drawPixelSprite(ctx, p, 48, 35, 2);
+  if ((t * 2 | 0) % 2 === 0) { ctx.fillStyle = '#d65a1f'; ctx.fillRect(38, 43, 2, 2); }
 }
 
 // ─── CREATURE / FIRE — Emberling ──────────────────────────────────────────────

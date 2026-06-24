@@ -5,6 +5,7 @@ import { beginFrozenMatch, advanceSimulationWindow } from './game/matchFlow';
 import { initUI, renderUI, drawDragOverlay, isDragActive } from './game/ui';
 import { renderCreatureEntities, drawBattlefieldLabels } from './game/battlefieldEntities';
 import { renderShaderFx } from './game/shaderFx';
+import { renderBattlefieldBackground } from './game/battlefieldBackground';
 import { resolveSimDamage } from './game/simDamage';
 import { updateCombatEffects } from './game/combatEffects';
 import { updateCreatureMovement } from './game/movement';
@@ -120,6 +121,7 @@ function loop(ts: number): void {
   // Re-render the canvas whenever the sim ticked OR a drag is active.
   // A drag is active at up to 60fps (mouse movement), which exceeds the 30fps sim rate,
   // so we must re-clear and re-draw every frame while dragging to avoid overlay smearing.
+  renderBattlefieldBackground(ctx, gs);
   renderSim(ctx, gs.sim);
   renderShaderFx(ctx, gs);
   renderCreatureEntities(ctx, gs);

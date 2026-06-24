@@ -193,13 +193,13 @@ body {
   cursor: crosshair;
 }
 
-.mode-menu { min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at 50% 35%, #28213a, #0b0913 65%); }
-.mode-menu-box { width: min(440px, calc(100vw - 40px)); padding: 32px; border: 1px solid #68518f; border-radius: 12px; background: linear-gradient(145deg, #211a30, #110d1d); box-shadow: 0 18px 60px #000a; text-align: center; }
+.mode-menu { min-height: 100vh; display: grid; place-items: center; background: #0b0907; }
+.mode-menu-box { width: min(440px, calc(100vw - 40px)); padding: 32px; border: 1px solid #8f642b; border-radius: 0; background: #1d1711; box-shadow: 0 18px 60px #000a; text-align: center; }
 .mode-menu-box h1 { margin: 4px 0 8px; font-size: 30px; }
 .mode-menu-box p { color: var(--text-dim); margin: 0 0 22px; }
-.mode-kicker { color: #bca4e8; letter-spacing: 4px; font-size: 11px; font-weight: bold; }
-.mode-option { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 15px; margin-top: 10px; border: 1px solid #7052aa; border-radius: 7px; background: #292042; color: #eee; cursor: pointer; }
-.mode-option:hover:not(:disabled) { background: #362858; border-color: #af86ff; }
+.mode-kicker { color: #c99a3a; letter-spacing: 4px; font-size: 11px; font-weight: bold; }
+.mode-option { width: 100%; display: flex; flex-direction: column; gap: 5px; text-align: left; padding: 15px; margin-top: 10px; border: 1px solid #8f642b; border-radius: 0; background: #2b1d12; color: #f2dfb4; cursor: pointer; }
+.mode-option:hover:not(:disabled) { background: #3a2818; border-color: #f1c85a; }
 .mode-option span { color: #b9b0c8; font-size: 12px; }
 .mode-option.disabled { opacity: .45; cursor: not-allowed; }
 .deck-builder { width: min(620px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; text-align: left; }
@@ -216,7 +216,7 @@ body {
 .deck-card-controls button { width: 25px; height: 25px; border: 1px solid #7557a8; border-radius: 4px; background: #302248; color: #fff; font-size: 17px; cursor: pointer; }
 .deck-card-controls button:disabled { opacity: .35; cursor: not-allowed; }
 @media (max-width: 520px) { .deck-requirements, .deck-card-list { grid-template-columns: 1fr 1fr; } }
-.simulation-msg { border-color: #7294a8; color: #c1d9e6; background: #182633; }
+.simulation-msg { border-color: #8f642b; color: #d7bd82; background: #211a13; }
 
 .phase-msg {
   font-size: 12px;
@@ -378,8 +378,20 @@ body {
   width: 100%;
   transition: background 0.15s, transform 0.1s;
 }
-.end-turn-btn:hover:not(:disabled) { background: #9c6fff; transform: scale(1.04); }
+.end-turn-btn:hover:not(:disabled) { background: #6f4824; transform: scale(1.04); }
 .end-turn-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.auto-end-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.auto-end-toggle input { margin: 0; accent-color: var(--accent); }
 .deck-info { font-size: 10px; color: var(--text-dim); text-align: center; }
 
 /* ── Combat log ─────────────────────────────────────────────────────────────── */
@@ -474,7 +486,7 @@ body, .mode-menu {
 .card-type-badge { color: #d7c294; }
 .combat-log { color: #bfa77e; background-color: #17100c; }
 .discard-drop { border-radius: 0; background: #26190f; border-color: #9a713a; color: #f2dfb4; }
-.overlay-box button:hover { background: #9c6fff; }
+.overlay-box button:hover { background: #6f4824; }
 
 /* Base targeting button */
 .base-target-btn {

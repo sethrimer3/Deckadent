@@ -1,7 +1,7 @@
 import { createPRNG, nextFloat, chance } from './prng';
 import { MaterialType } from './materials';
 import type { SimState, SimParticle, ParticleType } from './types';
-import { PARTICLE_COLORS } from '../theme/pixelTheme';
+import { PALETTE, coordShade } from './visualTheme';
 
 export const SIM_W = 320;
 export const SIM_H = 320;
@@ -361,11 +361,9 @@ function stepVine(sim: SimState, x: number, y: number, p: SimParticle): void {
 // ---------------------------------------------------------------------------
 
 const COLORS: Record<ParticleType, readonly [number, number, number]> = {
-  EMPTY: hexToRgb(PARTICLE_COLORS.EMPTY), WATER: hexToRgb(PARTICLE_COLORS.WATER),
-  FIRE: hexToRgb(PARTICLE_COLORS.FIRE), SAND: hexToRgb(PARTICLE_COLORS.SAND),
-  SMOKE: hexToRgb(PARTICLE_COLORS.SMOKE), SPARK: hexToRgb(PARTICLE_COLORS.SPARK),
-  CORE: hexToRgb(PARTICLE_COLORS.CORE), WALL: hexToRgb(PARTICLE_COLORS.WALL),
-  ICE: hexToRgb(PARTICLE_COLORS.ICE), VINE: hexToRgb(PARTICLE_COLORS.VINE),
+  EMPTY: hexToRgb(PALETTE.voidBlack), WATER: hexToRgb(PALETTE.waterSlate), FIRE: hexToRgb(PALETTE.ember), SAND: hexToRgb(PALETTE.clay),
+  SMOKE: hexToRgb(PALETTE.ashGray), SPARK: hexToRgb(PALETTE.brightGold), CORE: hexToRgb(PALETTE.mutedGold), WALL: hexToRgb(PALETTE.stone),
+  ICE: hexToRgb(PALETTE.ice), VINE: hexToRgb(PALETTE.moss),
 };
 
 export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
@@ -379,12 +377,8 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
     // Cell render color = stored color if present; otherwise particle-type default.
     // Material type is physics-only and does NOT override the visual color.
     let [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
-    if (p.type === 'EMPTY') {
-      const x = i % sim.width, y = (i / sim.width) | 0;
-      const grain = (x * 13 + y * 29) % 11;
-      const stone = (x * 17 + y * 7) % 97 === 0;
-      r += grain + (stone ? 18 : 0); g += grain + (stone ? 14 : 0); b += grain;
-    }
+    if (p.type === 'SAND' || p.type === 'WALL' || p.type === 'VINE') { const s = coordShade(i % sim.width, (i / sim.width) | 0); r += s; g += s; b += s; }
+    if (p.type === 'EMPTY') { d[pi + 3] = 0; continue; }
     // VISUAL-ONLY: fire/spark flicker and ice shimmer use Math.random — not gameplay-affecting.
     const fireJitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
     const iceJitter  = p.type === 'ICE' ? (Math.random() * 20 | 0) : 0;

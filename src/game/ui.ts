@@ -8,6 +8,7 @@ import { mountCardArtCanvases } from './cardArt';
 import { structureRadius } from './structureShapes';
 import { getSpellPlacementZone, isPointInPlacementZone } from './spellPlacement';
 import { ownerLabel } from './matchFlow';
+import { PALETTE } from './visualTheme';
 
 const CARD_BLANK_BY_ELEMENT: Record<string, string> = {
   FIRE: new URL('../../Assets/CardBlanks/CardBlank_Fire.png', import.meta.url).href,
@@ -24,17 +25,11 @@ const CARD_NUMBER_ASSET: Record<string, string> = Object.fromEntries(
 );
 
 const ELEMENT_COLOR: Record<string, string> = {
-  FIRE: '#e84a1a',
-  WATER: '#1a7ae8',
-  EARTH: '#a07830',
-  NEUTRAL: '#888',
+  FIRE: PALETTE.ember, WATER: PALETTE.waterSlate, EARTH: PALETTE.clay, NEUTRAL: PALETTE.stone,
 };
 
 const ELEMENT_BG: Record<string, string> = {
-  FIRE: '#3d1208',
-  WATER: '#08233d',
-  EARTH: '#2a1e08',
-  NEUTRAL: '#1a1a1a',
+  FIRE: '#3d1208', WATER: '#1d2a2d', EARTH: '#2a1e08', NEUTRAL: PALETTE.charcoal,
 };
 
 let _gs: GameState;
@@ -44,6 +39,8 @@ let _startMatch: ((mode: GameMode, address?: string, playerDeckIds?: string[]) =
 let _menuView: 'modes' | 'deck' = 'modes';
 const DECK_STORAGE_KEY = 'deckadent-player-deck-v1';
 let _playerDeck = loadPlayerDeck();
+let _endWhenNoPlayable = true;
+let _autoEndQueued = false;
 
 function loadPlayerDeck(): string[] {
   try {
@@ -98,7 +95,7 @@ export function initUI(
 // Called every animation frame from main.ts, on top of the sim canvas.
 
 const _EL_COLOR: Record<string, string> = {
-  FIRE: '#e84a1a', WATER: '#1a7ae8', EARTH: '#c09040', NEUTRAL: '#aaa',
+  FIRE: PALETTE.emberBright, WATER: PALETTE.waterSlate, EARTH: PALETTE.mutedGold, NEUTRAL: PALETTE.ashGray,
 };
 
 export function isDragActive(): boolean { return _dragActive; }
@@ -121,13 +118,14 @@ export function drawDragOverlay(ctx: CanvasRenderingContext2D, gs: GameState): v
   if (showPlacementZone) {
     const zone = getSpellPlacementZone('player');
     ctx.save();
-    ctx.fillStyle = 'rgba(35, 95, 120, 0.18)';
+    ctx.fillStyle = 'rgba(201, 154, 58, 0.15)';
     ctx.fillRect(0, zone.minY, ctx.canvas.width, zone.maxYExclusive - zone.minY);
-    ctx.fillStyle = 'rgba(105, 25, 30, 0.12)';
+    ctx.fillStyle = 'rgba(48, 12, 9, 0.19)';
     ctx.fillRect(0, 0, ctx.canvas.width, zone.minY);
-    ctx.strokeStyle = 'rgba(130, 210, 235, 0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 3]);
+    ctx.strokeStyle = 'rgba(241, 200, 90, 0.85)'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(0, zone.minY); ctx.lineTo(ctx.canvas.width, zone.minY); ctx.stroke();
-    ctx.fillStyle = 'rgba(180, 225, 235, 0.9)'; ctx.font = '10px serif'; ctx.fillText('CASTING ZONE', 7, zone.minY + 13);
+    for (let x = 5; x < ctx.canvas.width; x += 24) ctx.fillRect(x, zone.minY - 3, 1, 3);
+    ctx.fillStyle = PALETTE.oldParchment; ctx.font = 'bold 10px serif'; ctx.fillText('YOUR GROUND', 7, zone.minY + 13);
     ctx.restore();
   }
   if (!_dragActive) return;
@@ -359,6 +357,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
   const enemy = turn === 'player' ? gs.enemy : gs.player;
   const activeOwner = turn;
   const planning = gs.matchPhase === 'planning';
+  const hasPlayableCard = gs.player.hand.some(card => canPlayCard(gs, card.uid));
 
   const attackerId = gs.selectedAttackerUid;
   const isTargetingAttack = planning && phase === 'targeting-attack' && attackerId && turn === 'player';
@@ -421,6 +420,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
   const endTurnBtn = planning && !gs.aiActing
     ? `<button id="end-turn-btn" class="end-turn-btn">End Turn</button>`
     : `<button class="end-turn-btn" disabled>End Turn</button>`;
+  const autoEndToggle = `<label class="auto-end-toggle"><input id="auto-end-toggle" type="checkbox" ${_endWhenNoPlayable ? 'checked' : ''}> End when 0 playable</label>`;
 
   const logLines = gs.combatLog.slice(-12).map(l => `<div class="log-line">${l}</div>`).join('');
   const stateHash = hashHex(gs);
@@ -472,6 +472,7 @@ export function renderUI(gs: GameState, appEl: HTMLElement): void {
     ${gs.gameMode === 'realtime-hotseat' ? `<button id="seat-toggle-btn" class="seat-toggle">Active controls: ${ownerLabel(activeOwner)} — Switch Player</button>` : ''}
     <div class="hand-cards">${handCards}</div>
     <div class="controls">
+      ${autoEndToggle}
       ${endTurnBtn}
       <div class="discard-drop ${canRedraw ? '' : 'disabled'}" data-discard-drop><b>Discard & Draw</b><span>${redrawCost === undefined ? 'No redraws left this turn' : canRedraw ? `Drag a card here · ${redrawCost} energy` : player.deck.length === 0 ? 'Deck empty' : `Need ${redrawCost} energy`}</span></div>
       <span class="deck-info">Deck ${player.deck.length} · Discard ${player.discard.length}</span>
@@ -499,9 +500,37 @@ ${status !== 'playing' ? `
 
   bindEvents(gs, appEl);
   mountCardArtCanvases(appEl);
+
+  // Queue after this render so the player can see the updated hand briefly and
+  // so turn advancement never recursively re-enters the renderer.
+  if (_endWhenNoPlayable && planning && turn === 'player' && phase === 'main' && !gs.aiActing && status === 'playing' && !hasPlayableCard && !_autoEndQueued) {
+    _autoEndQueued = true;
+    setTimeout(() => {
+      _autoEndQueued = false;
+      if (!_endWhenNoPlayable || gs.matchPhase !== 'planning' || gs.turn !== 'player' || gs.phase !== 'main' || gs.aiActing || gs.status !== 'playing' || gs.player.hand.some(card => canPlayCard(gs, card.uid))) return;
+      endLocalTurn(gs);
+    }, 0);
+  }
 }
 
 // ─── Event binding ────────────────────────────────────────────────────────────
+
+function endLocalTurn(gs: GameState): void {
+  if (gs.aiActing || gs.status !== 'playing') return;
+  gs.selectedCardUid = null;
+  gs.selectedAttackerUid = null;
+  gs.pendingSpellCardUid = null;
+  gs.pendingGeneratorCardUid = null;
+  gs.phase = 'main';
+  applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: gs.turn, source: 'local' });
+  _renderFn();
+  const nextTurn: string = gs.turn;
+  if (nextTurn === 'enemy') {
+    runEnemyTurn(gs, _renderFn, () => {
+      if (gs.status === 'playing') _renderFn();
+    });
+  }
+}
 
 function bindEvents(gs: GameState, appEl: HTMLElement): void {
   const actionLocked = () => gs.gameMode === 'frozen-hotseat' && gs.matchPhase !== 'planning';
@@ -510,21 +539,13 @@ function bindEvents(gs: GameState, appEl: HTMLElement): void {
     gs.combatLog.push(`Active hotseat controls: ${ownerLabel(gs.turn)}.`);
     _renderFn();
   });
-  appEl.querySelector('#end-turn-btn')?.addEventListener('click', () => {
-    if (actionLocked() || gs.aiActing || gs.status !== 'playing') return;
-    gs.selectedCardUid = null;
-    gs.selectedAttackerUid = null;
-    gs.pendingSpellCardUid = null;
-    gs.pendingGeneratorCardUid = null;
-    gs.phase = 'main';
-    applyCommand(gs, { kind: 'endTurn', tick: gs.tick, owner: gs.turn, source: 'local' });
+  appEl.querySelector('#auto-end-toggle')?.addEventListener('change', event => {
+    _endWhenNoPlayable = (event.currentTarget as HTMLInputElement).checked;
     _renderFn();
-    const nextTurn: string = gs.turn;
-    if (nextTurn === 'enemy') {
-      runEnemyTurn(gs, _renderFn, () => {
-        if (gs.status === 'playing') _renderFn();
-      });
-    }
+  });
+  appEl.querySelector('#end-turn-btn')?.addEventListener('click', () => {
+    if (actionLocked()) return;
+    endLocalTurn(gs);
   });
 
   appEl.querySelector('#restart-btn')?.addEventListener('click', () => {
