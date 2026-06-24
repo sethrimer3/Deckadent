@@ -1,17 +1,17 @@
 /* ── CSS Variables ──────────────────────────────────────────────────────────── */
 :root {
-  --bg:        #0d0b18;
-  --surface:   #17132a;
-  --surface2:  #211c38;
-  --border:    #3a3060;
-  --text:      #e8e0ff;
-  --text-dim:  #8878aa;
-  --accent:    #7c4dff;
-  --energy:    #ffd740;
-  --fire:      #e84a1a;
-  --water:     #1a7ae8;
-  --earth:     #a07830;
-  --neutral:   #888;
+  --bg:        #100c09;
+  --surface:   #241a13;
+  --surface2:  #302319;
+  --border:    #5f4630;
+  --text:      #f2dfb4;
+  --text-dim:  #aa9374;
+  --accent:    #c49a4a;
+  --energy:    #d7a84a;
+  --fire:      #d86626;
+  --water:     #4a91a0;
+  --earth:     #a9814c;
+  --neutral:   #80705b;
   --card-w:    110px;
   --card-h:    165px;
   --radius:    6px;
@@ -22,7 +22,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: Georgia, 'Times New Roman', serif;
   font-size: 13px;
   height: 100vh;
   overflow: hidden;
@@ -184,8 +184,9 @@ body {
   aspect-ratio: 1 / 1;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  border: 2px solid var(--border);
-  border-radius: 4px;
+  border: 2px solid var(--border-highlight, #c49a4a);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 2px #130d09, 0 0 0 1px #392616, 0 8px 22px #090605;
   display: block;
 }
 #battle-canvas.placement-active {
@@ -428,6 +429,51 @@ body {
   cursor: pointer;
   margin-top: 8px;
 }
+
+/* Dark-fantasy pixel surface pass: reusable visual language for every DOM panel. */
+:root { --border-highlight: #c49a4a; }
+body, .mode-menu {
+  background-color: var(--bg);
+  background-image: radial-gradient(#2c1c12 1px, transparent 1px), linear-gradient(135deg, #130d09, #100c09 65%);
+  background-size: 6px 6px, auto;
+}
+.instructions, .side, .hand-area, .combat-log, .phase-msg, .mode-menu-box, .overlay-box {
+  border-color: var(--border);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px #3b291b, inset 0 2px 0 #735237, 0 3px 0 #090605;
+  background-image: linear-gradient(135deg, rgba(255,225,166,.035) 25%, transparent 25%, transparent 50%, rgba(0,0,0,.06) 50%, rgba(0,0,0,.06) 75%, transparent 75%);
+  background-size: 4px 4px;
+}
+.instructions { border-top-color: var(--border-highlight); }
+.side-title, .turn-label, .energy, .mode-kicker { color: var(--energy); text-shadow: 1px 1px #090605; }
+.turn-label.player { color: #d7a84a; } .turn-label.enemy { color: #d86626; }
+.unit-card, .deck-card { border-radius: 0; box-shadow: inset 0 0 0 1px #160e09, 2px 2px 0 #0b0705; }
+.unit-card.ready:hover, .hand-card.playable:hover { box-shadow: 2px 4px 0 #090605, 0 0 0 1px var(--border-highlight); }
+.unit-type-badge { color: #1a1009; border-radius: 0; }
+.hp-bar-wrap { background: #120d09; border-radius: 0; border: 1px solid #4c3523; }
+.phase-msg { color: var(--text); border-color: var(--border-highlight); }
+.end-turn-btn, .mode-option, .seat-toggle, .deck-card-controls button, .overlay-box button {
+  border: 1px solid #c49a4a;
+  border-radius: 0;
+  color: #f2dfb4;
+  background: #49301c;
+  box-shadow: inset 0 1px 0 #8e683e, 2px 2px 0 #0b0705;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.end-turn-btn:hover:not(:disabled), .mode-option:hover:not(:disabled), .deck-card-controls button:hover:not(:disabled) { background: #6f4824; border-color: #f0c665; }
+.end-turn-btn:active, .mode-option:active, .deck-card-controls button:active { transform: translate(1px, 1px); box-shadow: inset 0 1px 0 #6b472a; }
+.mode-menu-box { background-color: #21160f; border: 2px solid var(--border-highlight); }
+.mode-option span, .deck-card span { color: var(--text-dim); }
+.deck-requirements span, .deck-validity { border-radius: 0; border-color: #65482e; background: #1b120c; color: var(--text-dim); }
+.hand-card { filter: sepia(.12) saturate(.9); }
+.hand-card.selected { box-shadow: 0 0 0 2px #f2dfb4, 0 0 0 4px #c49a4a, 3px 5px 0 #090605; }
+.card-art-zone { border: 1px solid #5f4630; box-shadow: inset 0 0 8px #090605; }
+.card-name, .card-rules { color: #f2dfb4; text-shadow: 1px 1px #090605; }
+.card-type-badge { color: #d7c294; }
+.combat-log { color: #bfa77e; background-color: #17100c; }
+.discard-drop { border-radius: 0; background: #26190f; border-color: #9a713a; color: #f2dfb4; }
 .overlay-box button:hover { background: #9c6fff; }
 
 /* Base targeting button */

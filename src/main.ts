@@ -21,6 +21,7 @@ canvas.width  = SIM_W;
 canvas.height = SIM_H;
 canvas.id = 'battle-canvas';
 const ctx = canvas.getContext('2d')!;
+ctx.imageSmoothingEnabled = false;
 
 // ─── ?replay=latest — run verification before starting the game ───────────────
 const urlParams = new URLSearchParams(window.location.search);
@@ -144,8 +145,8 @@ function updateDebugPanel(): void {
     _debugEl.id = 'debug-panel';
     Object.assign(_debugEl.style, {
       font: '10px/1.4 monospace',
-      color: '#8cf',
-      background: 'rgba(0,0,8,0.75)',
+      color: '#d7a84a',
+      background: 'rgba(23,16,12,0.82)',
       padding: '1px 5px',
       position: 'absolute',
       bottom: '0',

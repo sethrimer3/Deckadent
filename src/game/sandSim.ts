@@ -1,6 +1,7 @@
 import { createPRNG, nextFloat, chance } from './prng';
 import { MaterialType } from './materials';
 import type { SimState, SimParticle, ParticleType } from './types';
+import { PARTICLE_COLORS } from '../theme/pixelTheme';
 
 export const SIM_W = 320;
 export const SIM_H = 320;
@@ -360,16 +361,11 @@ function stepVine(sim: SimState, x: number, y: number, p: SimParticle): void {
 // ---------------------------------------------------------------------------
 
 const COLORS: Record<ParticleType, readonly [number, number, number]> = {
-  EMPTY: [15, 10, 28],
-  WATER: [40, 110, 230],
-  FIRE:  [230, 70, 10],
-  SAND:  [185, 158, 82],
-  SMOKE: [95, 95, 108],
-  SPARK: [255, 220, 40],
-  CORE:  [0, 210, 160],   // teal — physically significant base/core cells
-  WALL:  [120, 105, 80],  // stone grey-brown — player-placed structural barrier
-  ICE:   [160, 220, 255], // icy light blue
-  VINE:  [35, 110, 35],   // forest green — organic, flammable
+  EMPTY: hexToRgb(PARTICLE_COLORS.EMPTY), WATER: hexToRgb(PARTICLE_COLORS.WATER),
+  FIRE: hexToRgb(PARTICLE_COLORS.FIRE), SAND: hexToRgb(PARTICLE_COLORS.SAND),
+  SMOKE: hexToRgb(PARTICLE_COLORS.SMOKE), SPARK: hexToRgb(PARTICLE_COLORS.SPARK),
+  CORE: hexToRgb(PARTICLE_COLORS.CORE), WALL: hexToRgb(PARTICLE_COLORS.WALL),
+  ICE: hexToRgb(PARTICLE_COLORS.ICE), VINE: hexToRgb(PARTICLE_COLORS.VINE),
 };
 
 export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
@@ -382,7 +378,13 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
     const pi = i * 4;
     // Cell render color = stored color if present; otherwise particle-type default.
     // Material type is physics-only and does NOT override the visual color.
-    const [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
+    let [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
+    if (p.type === 'EMPTY') {
+      const x = i % sim.width, y = (i / sim.width) | 0;
+      const grain = (x * 13 + y * 29) % 11;
+      const stone = (x * 17 + y * 7) % 97 === 0;
+      r += grain + (stone ? 18 : 0); g += grain + (stone ? 14 : 0); b += grain;
+    }
     // VISUAL-ONLY: fire/spark flicker and ice shimmer use Math.random — not gameplay-affecting.
     const fireJitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
     const iceJitter  = p.type === 'ICE' ? (Math.random() * 20 | 0) : 0;

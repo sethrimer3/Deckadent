@@ -16,8 +16,8 @@ function shouldSample(x: number, y: number, tick: number, stride: number): boole
 }
 
 function materialGlowColor(type: ParticleType): string | null {
-  if (type === 'FIRE') return 'rgba(255, 96, 18, 0.16)';
-  if (type === 'SPARK') return 'rgba(255, 235, 120, 0.22)';
+  if (type === 'FIRE') return 'rgba(228, 111, 38, 0.16)';
+  if (type === 'SPARK') return 'rgba(240, 189, 79, 0.22)';
   return null;
 }
 
@@ -72,8 +72,8 @@ export function renderShaderFx(ctx: CanvasRenderingContext2D, gs: GameState): vo
   // The vignette is intentionally normal compositing so it adds depth without bleaching cells.
   ctx.save();
   const gradient = ctx.createRadialGradient(width * 0.5, height * 0.48, width * 0.26, width * 0.5, height * 0.5, width * 0.75);
-  gradient.addColorStop(0, 'rgba(8, 6, 18, 0)');
-  gradient.addColorStop(1, `rgba(8, 6, 18, ${VIGNETTE_ALPHA})`);
+  gradient.addColorStop(0, 'rgba(16, 12, 9, 0)');
+  gradient.addColorStop(1, `rgba(9, 6, 5, ${VIGNETTE_ALPHA})`);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
   ctx.restore();
