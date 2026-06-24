@@ -9,6 +9,20 @@ import { structureRadius } from './structureShapes';
 import { getSpellPlacementZone, isPointInPlacementZone } from './spellPlacement';
 import { ownerLabel } from './matchFlow';
 
+const CARD_BLANK_BY_ELEMENT: Record<string, string> = {
+  FIRE: new URL('../../Assets/CardBlanks/CardBlank_Fire.png', import.meta.url).href,
+  WATER: new URL('../../Assets/CardBlanks/CardBlank_Water.png', import.meta.url).href,
+  EARTH: new URL('../../Assets/CardBlanks/CardBlank_Stone.png', import.meta.url).href,
+  NEUTRAL: new URL('../../Assets/CardBlanks/CardBlank_Stone.png', import.meta.url).href,
+};
+
+const CARD_NUMBER_ASSET: Record<string, string> = Object.fromEntries(
+  Array.from({ length: 10 }, (_, digit) => [
+    String(digit),
+    new URL(`../../Assets/CardNumbers/${digit}.png`, import.meta.url).href,
+  ]),
+);
+
 const ELEMENT_COLOR: Record<string, string> = {
   FIRE: '#e84a1a',
   WATER: '#1a7ae8',
@@ -283,6 +297,13 @@ function unitCard(u: UnitInstance, classes: string, clickable: boolean, extra = 
   </div>`;
 }
 
+/** Renders a number from the supplied card-number sprite glyphs. */
+function cardNumber(value: number, slot: 'cost' | 'attack' | 'hp'): string {
+  return `<span class="card-number card-number-${slot}" aria-label="${slot} ${value}">${String(value).split('').map(digit =>
+    `<img src="${CARD_NUMBER_ASSET[digit]}" alt="${digit}">`
+  ).join('')}</span>`;
+}
+
 function handCard(card: CardInstance, gs: GameState): string {
   const def = CARD_DEFS[card.defId];
   const playable = canPlayCard(gs, card.uid);
@@ -293,16 +314,14 @@ function handCard(card: CardInstance, gs: GameState): string {
     selected ? 'selected' : '',
   ].join(' ');
   return `<div class="${cls}" data-card-uid="${card.uid}" draggable="true"
-      style="border-color:${ELEMENT_COLOR[def.element]}">
-    <div class="card-cost">${def.cost}</div>
+      style="--card-blank:url('${CARD_BLANK_BY_ELEMENT[def.element] ?? CARD_BLANK_BY_ELEMENT.NEUTRAL}')">
+    ${cardNumber(def.cost, 'cost')}
     <div class="card-name">${def.name}</div>
     <div class="card-type-badge" style="background:${ELEMENT_COLOR[def.element]}">${def.element} · ${def.type}</div>
     <div class="card-art-zone" data-card-art="${card.defId}"></div>
-    <div class="card-stats">
-      ${def.hp !== undefined ? `<span>HP ${def.hp}</span>` : ''}
-      ${def.attack !== undefined && def.attack > 0 ? `<span>ATK ${def.attack}</span>` : ''}
-    </div>
     <div class="card-rules">${def.rulesText}</div>
+    ${def.attack !== undefined && def.attack > 0 ? cardNumber(def.attack, 'attack') : ''}
+    ${def.hp !== undefined ? cardNumber(def.hp, 'hp') : ''}
   </div>`;
 }
 

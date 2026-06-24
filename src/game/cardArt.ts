@@ -4,7 +4,7 @@
 // Real PNG/spritesheet assets can be swapped in via getDrawFn() per card id.
 
 export const ART_W = 96;
-export const ART_H = 44;
+export const ART_H = 68;
 
 type DrawFn = (ctx: CanvasRenderingContext2D, t: number) => void;
 
