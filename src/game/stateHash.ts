@@ -50,6 +50,8 @@ function hashSimState(h: number, sim: SimState): number {
       h = djb2Update(h, p.lifetime | 0);
       // Material type is authoritative — affects damage outcomes and must match across clients.
       h = djb2Update(h, p.material);
+      h = djb2Update(h, (p.hp ?? 0xffff) | 0);
+      h = djb2Update(h, (p.maxHp ?? 0xffff) | 0);
       h = djb2Update(h, p.gravity ?? 1);
       h = hashString(h, p.owner ?? '');
       h = hashString(h, p.color ?? '');

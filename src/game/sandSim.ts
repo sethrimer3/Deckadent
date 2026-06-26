@@ -2,6 +2,7 @@ import { createPRNG, nextFloat, chance } from './prng';
 import { MaterialType } from './materials';
 import type { SimState, SimParticle, ParticleType } from './types';
 import { PALETTE, coordShade } from './visualTheme';
+import { createCell, resolveCellInteraction } from './cellDamage';
 
 export const SIM_W = 320;
 export const SIM_H = 320;
@@ -73,7 +74,7 @@ export function addParticle(
   const material = TYPE_MATERIAL[type];
   if (existing.type !== 'EMPTY') {
     // Effect spawns collide too; they never overwrite an occupied cell.
-    resolveCollision(sim, { type, lifetime: 0, gravity, material }, xi, yi);
+    resolveContact(sim, { type, lifetime: 0, gravity, material }, -1, -1, xi, yi);
     return;
   }
   const lt = type === 'FIRE'  ? FIRE_MAX  + nextFloat(sim.prng) * 20
@@ -82,7 +83,7 @@ export function addParticle(
            : type === 'ICE'   ? ICE_MAX   + nextFloat(sim.prng) * 100
            : type === 'VINE'  ? VINE_MAX  + nextFloat(sim.prng) * 20
            : 0;
-  sim.grid[yi * sim.width + xi] = { type, lifetime: lt, gravity, material };
+  sim.grid[yi * sim.width + xi] = createCell(type, material, { lifetime: lt, gravity });
 }
 
 /** Convenience: random float from the sim PRNG. Used by effects.ts. */
@@ -191,6 +192,10 @@ function resolveCollision(sim: SimState, source: SimParticle, x: number, y: numb
   }
 }
 
+function resolveContact(sim: SimState, source: SimParticle, sourceX: number, sourceY: number, targetX: number, targetY: number): void {
+  resolveCellInteraction(sim, source, sourceX, sourceY, targetX, targetY);
+}
+
 function tryMove(sim: SimState, moved: Uint8Array, x: number, y: number, nx: number, ny: number): boolean {
   if (nx < 0 || nx >= sim.width || ny < 0 || ny >= sim.height) return false;
   const source = sim.grid[y * sim.width + x];
@@ -198,7 +203,7 @@ function tryMove(sim: SimState, moved: Uint8Array, x: number, y: number, nx: num
   if (target.type === 'EMPTY') { moveTo(sim, moved, x, y, nx, ny); return true; }
   // Sand displaces water as its density interaction; neither is overwritten.
   if (source.type === 'SAND' && target.type === 'WATER') { moveTo(sim, moved, x, y, nx, ny); return true; }
-  resolveCollision(sim, source, nx, ny);
+  resolveContact(sim, source, x, y, nx, ny);
   return false;
 }
 
@@ -236,7 +241,7 @@ function stepWater(sim: SimState, moved: Uint8Array, x: number, y: number): void
     }
     // Water adjacent to ICE has a chance to freeze (propagating freeze)
     if (neighbor.type === 'ICE' && chance(sim.prng, 0.04)) {
-      sim.grid[y * sim.width + x] = { type: 'ICE', lifetime: ICE_MAX, material: M.ICE };
+      sim.grid[y * sim.width + x] = createCell('ICE', M.ICE, { lifetime: ICE_MAX });
       return;
     }
   }
@@ -281,7 +286,7 @@ function stepFire(sim: SimState, moved: Uint8Array, x: number, y: number, p: Sim
     if (nx >= 0 && nx < sim.width && isEmpty(sim, nx, y)) {
       sim.grid[y * sim.width + nx] = { type: 'FIRE', lifetime: Math.round(p.lifetime * 0.4), material: M.FIRE };
     } else if (nx >= 0 && nx < sim.width) {
-      resolveCollision(sim, p, nx, y);
+      resolveContact(sim, p, x, y, nx, y);
     }
   }
 }
@@ -307,7 +312,7 @@ function stepSpark(sim: SimState, moved: Uint8Array, x: number, y: number, p: Si
     if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height && isEmpty(sim, nx, ny)) {
       sim.grid[ny * sim.width + nx] = { type: 'FIRE', lifetime: FIRE_MAX, material: M.FIRE };
     } else if (nx >= 0 && nx < sim.width && ny >= 0 && ny < sim.height) {
-      resolveCollision(sim, p, nx, ny);
+      resolveContact(sim, p, x, y, nx, ny);
     }
   }
   const dx = chance(sim.prng, 0.5) ? 1 : -1;
@@ -335,7 +340,7 @@ function stepIce(sim: SimState, moved: Uint8Array, x: number, y: number, p: SimP
     }
     // Propagate freeze to adjacent water (chain-freeze, slow)
     if (neighbor.type === 'WATER' && chance(sim.prng, 0.025)) {
-      sim.grid[ny * sim.width + nx] = { type: 'ICE', lifetime: ICE_MAX, material: M.ICE };
+      sim.grid[ny * sim.width + nx] = createCell('ICE', M.ICE, { lifetime: ICE_MAX });
     }
   }
   void moved; // suppress unused variable warning — stepIce doesn't move
@@ -379,6 +384,13 @@ export function renderSim(ctx: CanvasRenderingContext2D, sim: SimState): void {
     let [r, g, b] = p.color ? hexToRgb(p.color) : COLORS[p.type];
     if (p.type === 'SAND' || p.type === 'WALL' || p.type === 'VINE') { const s = coordShade(i % sim.width, (i / sim.width) | 0); r += s; g += s; b += s; }
     if (p.type === 'EMPTY') { d[pi + 3] = 0; continue; }
+    if (p.hp !== undefined && p.maxHp !== undefined && p.maxHp > 0) {
+      const ratio = Math.max(0, Math.min(1, p.hp / p.maxHp));
+      const darken = 0.28 + ratio * 0.72;
+      r = Math.max(0, r * darken);
+      g = Math.max(0, g * darken);
+      b = Math.max(0, b * darken);
+    }
     // VISUAL-ONLY: fire/spark flicker and ice shimmer use Math.random — not gameplay-affecting.
     const fireJitter = (p.type === 'FIRE' || p.type === 'SPARK') ? (Math.random() * 30 | 0) : 0;
     const iceJitter  = p.type === 'ICE' ? (Math.random() * 20 | 0) : 0;

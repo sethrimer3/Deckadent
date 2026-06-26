@@ -1,5 +1,6 @@
 import type { Owner, SimState } from './types';
 import { MaterialType } from './materials';
+import { createCell } from './cellDamage';
 
 // ---------------------------------------------------------------------------
 // Deterministic structure placement helpers.
@@ -15,23 +16,18 @@ import { MaterialType } from './materials';
 //     flying particles, so structures are physically meaningful.
 // ---------------------------------------------------------------------------
 
-// Each wall cell is one physical structure particle; a direct collision removes it.
-const WALL_DURABILITY = 1;
-// Vine cells are more resilient to physical impacts but burn easily.
-const VINE_DURABILITY = 60;
-
 function setWall(sim: SimState, x: number, y: number, owner: Owner, material: MaterialType = MaterialType.STONE): void {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;
   const idx = y * sim.width + x;
   if (sim.grid[idx].type === 'CORE') return; // never overwrite the base core
-  sim.grid[idx] = { type: 'WALL', lifetime: WALL_DURABILITY, owner, material };
+  sim.grid[idx] = createCell('WALL', material, { owner });
 }
 
 function setVine(sim: SimState, x: number, y: number, owner: Owner): void {
   if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) return;
   const idx = y * sim.width + x;
   if (sim.grid[idx].type === 'CORE') return;
-  sim.grid[idx] = { type: 'VINE', lifetime: VINE_DURABILITY, owner, material: MaterialType.WOOD };
+  sim.grid[idx] = createCell('VINE', MaterialType.WOOD, { owner, lifetime: 60 });
 }
 
 // ─── Primitive shapes ─────────────────────────────────────────────────────────

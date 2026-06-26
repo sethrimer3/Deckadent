@@ -60,6 +60,11 @@ export interface CombatEffect {
 export interface SimParticle {
   type: ParticleType;
   lifetime: number;
+  /** Explicit per-cell durability. Lifetime is reserved for temporary particle aging. */
+  hp?: number;
+  maxHp?: number;
+  /** Visual-only flash timer if used by renderers; not authoritative gameplay. */
+  damageFlashTicks?: number;
   /** Physical material type — drives hardness, flammability, and erosion rates.
    * Independent of rendering color; color is stored in the `color` field. */
   material: MaterialType;

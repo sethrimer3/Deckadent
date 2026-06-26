@@ -6,6 +6,7 @@ import { isGeneratorOperational, createInitialGameState, countCoreCells, resetUi
 import { resolveSimDamage } from './simDamage';
 import type { GameState, ParticleType } from './types';
 import { findAttachedBody, isPhysicallyAlive } from './physicalIntegrity';
+import { createCell } from './cellDamage';
 
 // Deterministic, framework-free coverage for the physical building-damage contract.
 // Kept as an exported harness so it can be invoked by a future test runner without
@@ -26,7 +27,7 @@ function surroundCoreWith(gs: GameState, type: ParticleType): void {
       const x = base.simX + dx;
       const y = base.simY + dy;
       const i = y * gs.sim.width + x;
-      if (gs.sim.grid[i].type !== 'CORE') gs.sim.grid[i] = { type, lifetime: 999, material: type === 'WATER' ? MaterialType.WATER : MaterialType.FIRE };
+      if (gs.sim.grid[i].type !== 'CORE') gs.sim.grid[i] = createCell(type, type === 'WATER' ? MaterialType.WATER : MaterialType.FIRE, { lifetime: 999 });
     }
   }
 }
@@ -72,7 +73,7 @@ export function runBuildingDamageHarness(): void {
   for (let i = 0; i < splitState.sim.grid.length; i++) if (splitState.sim.grid[i].structureUid === splitGen.uid)
     splitState.sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
   for (const [x, y] of [[ax, ay], [ax + 1, ay], [ax + 20, ay], [ax + 21, ay], [ax + 22, ay]])
-    splitState.sim.grid[y * splitState.sim.width + x] = { type: 'WALL', lifetime: 1, material: MaterialType.STONE, structureUid: splitGen.uid };
+    splitState.sim.grid[y * splitState.sim.width + x] = createCell('WALL', MaterialType.STONE, { structureUid: splitGen.uid });
   splitGen.originalParticleCount = 5;
   splitGen.maxHp = 5;
   syncGeneratorHealth(splitState);
@@ -92,7 +93,7 @@ export function runBuildingDamageHarness(): void {
   const dx = debrisGen.simX!, dy = debrisGen.simY!;
   for (let i = 0; i < debrisState.sim.grid.length; i++) if (debrisState.sim.grid[i].structureUid === debrisGen.uid)
     debrisState.sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
-  for (const [x, y] of [[dx, dy], [dx + 12, dy]]) debrisState.sim.grid[y * debrisState.sim.width + x] = { type: 'WALL', lifetime: 1, material: MaterialType.STONE, structureUid: debrisGen.uid };
+  for (const [x, y] of [[dx, dy], [dx + 12, dy]]) debrisState.sim.grid[y * debrisState.sim.width + x] = createCell('WALL', MaterialType.STONE, { structureUid: debrisGen.uid });
   debrisGen.originalParticleCount = 2;
   syncGeneratorHealth(debrisState);
   assert(debrisGen.hp === 1 && debrisState.sim.grid[dy * debrisState.sim.width + dx + 12].structureUid === debrisGen.uid, 'explicit debris behavior preserves detached cells while excluding them from integrity');
@@ -110,7 +111,7 @@ export function runBuildingDamageHarness(): void {
       coreState.sim.grid[i] = { type: 'EMPTY', lifetime: 0, material: MaterialType.VOID };
   }
   for (const [x, y] of [[base.simX - 4, base.simY], [base.simX - 3, base.simY], [base.simX + 2, base.simY], [base.simX + 3, base.simY], [base.simX + 4, base.simY]])
-    coreState.sim.grid[y * coreState.sim.width + x] = { type: 'CORE', lifetime: 0, material: MaterialType.STONE };
+    coreState.sim.grid[y * coreState.sim.width + x] = createCell('CORE', MaterialType.STONE);
   assert(countCoreCells(coreState.sim, base) === 3, 'when a core anchor is gone, the largest connected component must become the body');
 
   resolveUntilCoreDamaged(freshState(), 'FIRE');

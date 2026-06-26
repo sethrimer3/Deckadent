@@ -204,9 +204,6 @@ export function resolveSimDamage(gs: GameState): void {
     damageUnit(unit, gs);
   }
 
-  erodeCoreCells(gs);
-  erodeWallCells(gs);
-  erodeVineCells(gs);
   syncGeneratorHealth(gs);
   syncBaseHp(gs);
 

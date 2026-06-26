@@ -6,6 +6,7 @@ import { createSimState } from './sandSim';
 import { initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
 import { MaterialType } from './materials';
 import { findAttachedBody, isOperational } from './physicalIntegrity';
+import { createCell } from './cellDamage';
 
 let _uid = 0;
 export function newUid(): string { return `u${++_uid}`; }
@@ -116,7 +117,7 @@ function placeCoreAtBase(sim: SimState, base: BaseInstance): void {
     const x = base.simX + dx;
     const y = base.simY + dy;
     if (x >= 0 && x < sim.width && y >= 0 && y < sim.height) {
-      sim.grid[y * sim.width + x] = { type: 'CORE', lifetime: 0, material: MaterialType.STONE };
+      sim.grid[y * sim.width + x] = createCell('CORE', MaterialType.STONE);
     }
   }
 }
@@ -135,7 +136,7 @@ function placeBaseShell(sim: SimState, base: BaseInstance): void {
       const x = base.simX + dx, y = base.simY + dy;
       if (x < 0 || x >= sim.width || y < 0 || y >= sim.height) continue;
       const idx = y * sim.width + x;
-      if (sim.grid[idx].type === 'EMPTY') sim.grid[idx] = { type: 'WALL', lifetime: 999, owner: base.owner, material: MaterialType.STONE };
+      if (sim.grid[idx].type === 'EMPTY') sim.grid[idx] = createCell('WALL', MaterialType.STONE, { owner: base.owner });
     }
   }
 }
