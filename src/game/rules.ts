@@ -1,12 +1,12 @@
 import type { GameState, UnitInstance, Owner } from './types';
 import { CARD_DEFS } from './cards';
-import { newUid, startTurn, countCoreCells, drawCard } from './state';
+import { createUnitInstance, startTurn, countCoreCells, drawCard } from './state';
 import { isPhysicallyAlive } from './physicalIntegrity';
 import { SIM_W, SIM_H } from './sandSim';
 import { enqueueEffect, elementToEffectKind } from './combatEffects';
 import { getUnitFootprint, overlapsExistingUnit } from './footprint';
 import { applyStructureShape, structureRadius, canPlaceStructure } from './structureShapes';
-import { canPlaceGeneratorParticles, initializeGeneratorHealth, placeGeneratorParticles } from './generatorShapes';
+import { canPlaceGeneratorParticles, placeGeneratorParticles } from './generatorShapes';
 import { destroyDeadGenerators } from './buildingDamage';
 import { isPointInPlacementZone } from './spellPlacement';
 import { canIssueTurnCommand, advancePlanningTurn } from './matchFlow';
@@ -159,14 +159,7 @@ export function playCard(
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
-    const generator: UnitInstance = {
-      uid: newUid(), defId: def.id,
-      hp: def.hp ?? 3, maxHp: def.hp ?? 3,
-      attack: 0, hasAttacked: false, owner,
-      simX: placement.x,
-      simY: placement.y,
-    };
-    initializeGeneratorHealth(generator);
+    const generator = createUnitInstance(def.id, owner, placement.x, placement.y);
     ps.generators.push(generator);
     placeGeneratorParticles(gs.sim, generator);
     gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
@@ -194,13 +187,7 @@ export function playCard(
 
     ps.energy -= def.cost;
     ps.hand.splice(cardIdx, 1);
-    ps.creatures.push({
-      uid: newUid(), defId: def.id,
-      hp: def.hp ?? 3, maxHp: def.hp ?? 3,
-      attack: def.attack ?? 1, hasAttacked: false, owner,
-      simX: placement.x,
-      simY: placement.y,
-    });
+    ps.creatures.push(createUnitInstance(def.id, owner, placement.x, placement.y));
     gs.combatLog.push(`${label} places ${def.name} at (${placement.x},${placement.y}).`);
     ps.discard.push(card);
     return true;

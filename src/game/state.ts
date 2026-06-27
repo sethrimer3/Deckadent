@@ -41,7 +41,7 @@ function makeCard(defId: string): CardInstance {
   return { uid: newUid(), defId };
 }
 
-function makeUnit(defId: string, owner: Owner, simX?: number, simY?: number): UnitInstance {
+export function createUnitInstance(defId: string, owner: Owner, simX?: number, simY?: number): UnitInstance {
   const def = CARD_DEFS[defId];
   const collisionEnergy = def.collisionEnergy;
   const unit: UnitInstance = {
@@ -149,8 +149,8 @@ function makePlayerState(deckIds: string[], owner: Owner, prng: PRNGState): Play
     hand,
     discard: [],
     generators: owner === 'player'
-      ? [makeUnit('spark_core', owner, 62, 288), makeUnit('spring_core', owner, 98, 288)]
-      : [makeUnit('spark_core', owner, 222, 32), makeUnit('spring_core', owner, 258, 32)],
+      ? [createUnitInstance('spark_core', owner, 62, 288), createUnitInstance('spring_core', owner, 98, 288)]
+      : [createUnitInstance('spark_core', owner, 222, 32), createUnitInstance('spring_core', owner, 258, 32)],
     creatures: [],
     energy: 0,
     redrawsThisTurn: 0,

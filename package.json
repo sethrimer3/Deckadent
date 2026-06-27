@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node scripts/run-regression-harnesses.cjs",
     "desktop": "electron .",
     "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "desktop:build": "npm run build && electron ."
