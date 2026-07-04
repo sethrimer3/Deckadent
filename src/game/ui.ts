@@ -311,7 +311,7 @@ function handCard(card: CardInstance, gs: GameState): string {
     playable ? 'playable' : 'unplayable',
     selected ? 'selected' : '',
   ].join(' ');
-  return `<div class="${cls}" data-card-uid="${card.uid}" draggable="true"
+  return `<div class="${cls}" data-card-uid="${card.uid}" draggable="true" tabindex="0"
       style="--card-blank:url('${CARD_BLANK_BY_ELEMENT[def.element] ?? CARD_BLANK_BY_ELEMENT.NEUTRAL}')">
     ${cardNumber(def.cost, 'cost')}
     <div class="card-name">${def.name}</div>
