@@ -36,7 +36,8 @@ let _gs: GameState;
 let _renderFn: () => void;
 let _canvas: HTMLCanvasElement;
 let _startMatch: ((mode: GameMode, address?: string, playerDeckIds?: string[]) => void) | null = null;
-let _menuView: 'modes' | 'deck' = 'modes';
+let _menuView: 'modes' | 'deck' | 'settings' = 'modes';
+const DISCORD_INVITE_URL = 'https://discord.gg/dSwR3Fj7du';
 const DECK_STORAGE_KEY = 'deckadent-player-deck-v1';
 let _playerDeck = loadPlayerDeck();
 let _endWhenNoPlayable = true;
@@ -340,13 +341,22 @@ function renderDeckBuilder(appEl: HTMLElement): void {
 
 // ─── Main render ─────────────────────────────────────────────────────────────
 
+function renderSettings(appEl: HTMLElement): void {
+  appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box settings-menu"><div class="mode-kicker">DECKADENT</div><h1>Settings</h1><p>Community and game links.</p><a class="discord-button" href="${DISCORD_INVITE_URL}" target="_blank" rel="noopener noreferrer"><b>Join the Discord</b><span>News, discussion, feedback, and fellow players</span></a><button class="mode-option" data-settings-back><b>Back to game modes</b></button></div></div>`;
+  appEl.querySelector('[data-settings-back]')?.addEventListener('click', () => { _menuView = 'modes'; renderUI(_gs, appEl); });
+}
+
 export function renderUI(gs: GameState, appEl: HTMLElement): void {
   if (gs.matchPhase === 'mode-select') {
     if (_menuView === 'deck') { renderDeckBuilder(appEl); return; }
+    if (_menuView === 'settings') { renderSettings(appEl); return; }
     const deckValid = validatePlayerDeck(_playerDeck).valid;
     appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box"><div class="mode-kicker">DECKADENT</div><h1>Game Mode</h1><p>Choose a local or network session.</p><button data-mode="frozen-hotseat" class="mode-option"><b>Frozen Turn-Based Hotseat</b><span>Playable now · shared device · planning freezes simulation.</span></button><button data-mode="realtime-hotseat" class="mode-option"><b>Real-Time Hotseat</b><span>Playable now · shared device/mobile · simulation runs continuously.</span></button><button data-mode="realtime-lan-host" class="mode-option"><b>Real-Time LAN — Host</b><span>Host-authoritative session scaffold.</span></button><button data-mode="realtime-lan-client" class="mode-option"><b>Real-Time LAN — Join</b><span>Client mirror scaffold · enter host address.</span></button><button class="mode-option disabled" disabled><b>Online Play</b><span>Coming later</span></button></div></div>`;
     appEl.innerHTML = `<div class="mode-menu"><div class="mode-menu-box"><div class="mode-kicker">DECKADENT</div><h1>Game Mode</h1><p>Choose a local or network session.</p><button data-open-deck class="mode-option"><b>Customize Deck</b><span>${validatePlayerDeck(_playerDeck).message}</span></button><button data-mode="frozen-hotseat" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Frozen Turn-Based Hotseat</b><span>Shared device; planning freezes simulation.</span></button><button data-mode="realtime-hotseat" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time Hotseat</b><span>Shared device; simulation runs continuously.</span></button><button data-mode="realtime-lan-host" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time LAN — Host</b><span>Host-authoritative session scaffold.</span></button><button data-mode="realtime-lan-client" class="mode-option" ${deckValid ? '' : 'disabled'}><b>Real-Time LAN — Join</b><span>Client mirror scaffold; enter host address.</span></button><button class="mode-option disabled" disabled><b>Online Play</b><span>Coming later</span></button></div></div>`;
     appEl.querySelector('[data-open-deck]')?.addEventListener('click', () => { _menuView = 'deck'; renderUI(_gs, appEl); });
+    const menuBox = appEl.querySelector('.mode-menu-box');
+    if (menuBox) menuBox.insertAdjacentHTML('beforeend', `<button data-open-settings class="mode-option"><b>Settings</b><span>Community and game links</span></button>`);
+    appEl.querySelector('[data-open-settings]')?.addEventListener('click', () => { _menuView = 'settings'; renderUI(_gs, appEl); });
     appEl.querySelectorAll('[data-mode]').forEach(el => el.addEventListener('click', () => { const mode = (el as HTMLElement).dataset.mode as GameMode; const address = mode === 'realtime-lan-client' ? window.prompt('Host WebSocket address', 'ws://192.168.1.10:8080') ?? undefined : undefined; if (address !== undefined || mode !== 'realtime-lan-client') _startMatch?.(mode, address, [..._playerDeck]); }));
     return;
   }
